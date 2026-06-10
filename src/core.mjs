@@ -19,6 +19,8 @@ export const STANDARD_TYPES = [
   "fairy",
 ];
 
+const PUBLIC_LEADERBOARD_LENGTHS = new Set([25, 50, 150, 250]);
+
 const NAME_EXCEPTIONS = new Map([
   ["farfetchd", "Farfetch'd"],
   ["sirfetchd", "Sirfetch'd"],
@@ -106,6 +108,53 @@ export function getLengthCap({ mode, preset, custom, poolSize }) {
     : Number(preset) || 25;
 
   return clamp(requested, 1, poolSize);
+}
+
+export function formatElapsedTime(ms) {
+  const totalTenths = Math.max(0, Math.floor(Number(ms) / 100) || 0);
+  const minutes = Math.floor(totalTenths / 600);
+  const seconds = Math.floor((totalTenths % 600) / 10);
+  const tenths = totalTenths % 10;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${tenths}`;
+}
+
+export function buildLeaderboardKey(settings) {
+  const length = Number(settings.length) || 0;
+  const guessMode = cleanKeyPart(settings.guessMode || "name");
+  const answerStyle = cleanKeyPart(settings.answerStyle || "input");
+  const presentation = cleanKeyPart(settings.presentation || "silhouette");
+  const type = cleanKeyPart(settings.type || "all");
+  const generation = cleanKeyPart(settings.generation || "all");
+  const search = cleanKeyPart(settings.search || "");
+
+  return [
+    "v1",
+    `len:${length}`,
+    `guess:${guessMode}`,
+    `style:${answerStyle}`,
+    `present:${presentation}`,
+    `type:${type}`,
+    `gen:${generation}`,
+    `search:${search}`,
+  ].join("|");
+}
+
+export function isLeaderboardEligible(settings, user) {
+  return Boolean(
+    user?.uid &&
+    settings?.timed &&
+    settings.lengthMode === "preset" &&
+    PUBLIC_LEADERBOARD_LENGTHS.has(Number(settings.length)),
+  );
+}
+
+export function isBetterScore(next, current) {
+  if (!next) return false;
+  if (!current) return true;
+  if (Number(next.correct) !== Number(current.correct)) {
+    return Number(next.correct) > Number(current.correct);
+  }
+  return Number(next.elapsedMs) < Number(current.elapsedMs);
 }
 
 export function isCorrectAnswer(input, pokemon, mode, allPokemon = []) {
@@ -294,6 +343,14 @@ function levenshtein(left, right) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function cleanKeyPart(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function capitalize(value) {

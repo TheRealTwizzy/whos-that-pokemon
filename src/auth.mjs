@@ -1,7 +1,8 @@
-import { mergeIdSets } from "./core.mjs";
+import { isBetterScore, mergeIdSets } from "./core.mjs";
 
 const FIREBASE_VERSION = "10.12.5";
 const LOCAL_PROGRESS_KEY = "pokemonQuiz.progress.v1";
+const LOCAL_PERSONAL_SCORES_KEY = "pokemonQuiz.personalScores.v1";
 
 export function createProgressStore(onChange = () => {}) {
   const state = {
@@ -10,6 +11,7 @@ export function createProgressStore(onChange = () => {}) {
     status: "Guest progress is stored on this device.",
     user: null,
     correctPokemonIds: readLocalIds(),
+    personalScores: readLocalScores(),
   };
 
   let firebase = null;
@@ -68,6 +70,7 @@ export function createProgressStore(onChange = () => {}) {
         if (user) {
           state.status = `Signed in as ${state.user.displayName}.`;
           await mergeCloudProgress(user.uid);
+          await mergeCloudPersonalScores(user.uid);
         } else {
           state.status = "Guest progress is stored on this device.";
         }
@@ -125,6 +128,55 @@ export function createProgressStore(onChange = () => {}) {
     }
   }
 
+  async function recordPersonalScore(boardKey, score) {
+    const current = state.personalScores[boardKey] ?? null;
+    if (!isBetterScore(score, current)) {
+      return { saved: false, score: current };
+    }
+
+    state.personalScores = {
+      ...state.personalScores,
+      [boardKey]: score,
+    };
+    writeLocalScores(state.personalScores);
+    emit();
+
+    if (state.user && firebase) {
+      await writePersonalScore(state.user.uid, boardKey, score);
+    }
+
+    return { saved: true, score };
+  }
+
+  async function submitLeaderboardScore(boardKey, score) {
+    if (!state.user || !firebase) {
+      return { submitted: false, reason: "Sign in with Google to submit public timed scores." };
+    }
+
+    const { doc, getDoc } = firebase.firestoreModule;
+    const ref = doc(firebase.db, "leaderboards", boardKey, "scores", state.user.uid);
+    const snapshot = await getDoc(ref);
+    const current = snapshot.exists() ? snapshot.data() : null;
+    if (!isBetterScore(score, current)) {
+      return { submitted: false, reason: "Existing public score is better.", score: current };
+    }
+
+    await writePublicScore(boardKey, score);
+    return { submitted: true, score };
+  }
+
+  async function loadLeaderboard(boardKey, limitCount = 10) {
+    if (!firebase) return [];
+
+    const { collection, getDocs } = firebase.firestoreModule;
+    const ref = collection(firebase.db, "leaderboards", boardKey, "scores");
+    const snapshot = await getDocs(ref);
+    return snapshot.docs
+      .map((docSnapshot) => docSnapshot.data())
+      .sort(compareScores)
+      .slice(0, limitCount);
+  }
+
   async function mergeCloudProgress(uid) {
     if (!firebase) return;
 
@@ -151,12 +203,68 @@ export function createProgressStore(onChange = () => {}) {
     );
   }
 
+  async function mergeCloudPersonalScores(uid) {
+    if (!firebase) return;
+
+    const { collection, getDocs } = firebase.firestoreModule;
+    const ref = collection(firebase.db, "pokemonQuizProfiles", uid, "personalScores");
+    const snapshot = await getDocs(ref);
+    const cloudScores = Object.fromEntries(
+      snapshot.docs.map((docSnapshot) => [docSnapshot.id, docSnapshot.data()]),
+    );
+    const mergedScores = { ...state.personalScores };
+
+    for (const [boardKey, score] of Object.entries(cloudScores)) {
+      if (isBetterScore(score, mergedScores[boardKey])) mergedScores[boardKey] = score;
+    }
+
+    state.personalScores = mergedScores;
+    writeLocalScores(mergedScores);
+
+    await Promise.all(
+      Object.entries(mergedScores).map(([boardKey, score]) => writePersonalScore(uid, boardKey, score)),
+    );
+  }
+
+  async function writePersonalScore(uid, boardKey, score) {
+    const { doc, serverTimestamp, setDoc } = firebase.firestoreModule;
+    const ref = doc(firebase.db, "pokemonQuizProfiles", uid, "personalScores", boardKey);
+    await setDoc(
+      ref,
+      {
+        ...score,
+        uid,
+        displayName: state.user?.displayName || score.displayName || "Trainer",
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  async function writePublicScore(boardKey, score) {
+    const { doc, serverTimestamp, setDoc } = firebase.firestoreModule;
+    const ref = doc(firebase.db, "leaderboards", boardKey, "scores", state.user.uid);
+    await setDoc(
+      ref,
+      {
+        ...score,
+        uid: state.user.uid,
+        displayName: state.user.displayName,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
   return {
     getState,
     init,
     signIn,
     signOut,
     recordCorrectPokemon,
+    recordPersonalScore,
+    submitLeaderboardScore,
+    loadLeaderboard,
   };
 }
 
@@ -184,4 +292,28 @@ function writeLocalIds(ids) {
   } catch {
     // Private browsing and storage quota errors should not block gameplay.
   }
+}
+
+function readLocalScores() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_PERSONAL_SCORES_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalScores(scores) {
+  try {
+    localStorage.setItem(LOCAL_PERSONAL_SCORES_KEY, JSON.stringify(scores));
+  } catch {
+    // Private browsing and storage quota errors should not block gameplay.
+  }
+}
+
+function compareScores(left, right) {
+  if (Number(left.correct) !== Number(right.correct)) {
+    return Number(right.correct) - Number(left.correct);
+  }
+  return Number(left.elapsedMs) - Number(right.elapsedMs);
 }

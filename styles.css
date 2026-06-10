@@ -79,6 +79,13 @@ select {
   font-weight: 800;
 }
 
+input[type="checkbox"] {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  accent-color: var(--yellow);
+}
+
 h1,
 h2,
 p {
@@ -175,7 +182,7 @@ p {
 
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -189,6 +196,14 @@ label span {
   font-size: 0.78rem;
   font-weight: 950;
   text-transform: uppercase;
+}
+
+.toggle-row {
+  align-content: end;
+}
+
+.toggle-row input {
+  min-height: 45px;
 }
 
 .length-controls {
@@ -218,6 +233,10 @@ label span {
   align-self: start;
 }
 
+.leaderboard-panel {
+  grid-column: 1 / -1;
+}
+
 .dex-meter {
   height: 16px;
   overflow: hidden;
@@ -239,6 +258,40 @@ label span {
   margin-top: 14px;
   overflow: auto;
   padding-right: 3px;
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: 8px;
+}
+
+.leaderboard-entry {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 90px 90px;
+  align-items: center;
+  gap: 10px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.84);
+  font-weight: 850;
+}
+
+.leaderboard-entry span {
+  min-width: 0;
+}
+
+.leaderboard-entry .rank {
+  color: var(--blue);
+}
+
+.leaderboard-empty {
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--muted);
+  font-weight: 850;
 }
 
 .dex-entry {
@@ -269,7 +322,7 @@ label span {
 
 .quiz-header {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -293,6 +346,11 @@ label span {
   display: block;
   font-size: clamp(1.25rem, 3vw, 2rem);
   line-height: 1;
+}
+
+.timer-metric strong {
+  color: var(--red-dark);
+  font-variant-numeric: tabular-nums;
 }
 
 .art-panel {
@@ -416,7 +474,8 @@ label span {
   .quiz-header,
   .quiz-actions,
   .choice-grid,
-  .answer-row {
+  .answer-row,
+  .leaderboard-entry {
     grid-template-columns: 1fr;
   }
 

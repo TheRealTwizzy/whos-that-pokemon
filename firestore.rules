@@ -2,8 +2,42 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedInAs(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validScore(userId) {
+      let data = request.resource.data;
+      return signedInAs(userId)
+        && data.uid == userId
+        && data.boardKey is string
+        && data.displayName is string
+        && data.correct is int
+        && data.total is int
+        && data.elapsedMs is number
+        && data.accuracy is number
+        && data.settings is map
+        && data.completedAt is string
+        && data.correct >= 0
+        && data.total >= 1
+        && data.correct <= data.total
+        && data.elapsedMs >= 0;
+    }
+
     match /pokemonQuizProfiles/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if signedInAs(userId);
+
+      match /personalScores/{scoreId} {
+        allow read: if signedInAs(userId);
+        allow create, update: if validScore(userId);
+        allow delete: if false;
+      }
+    }
+
+    match /leaderboards/{boardKey}/scores/{userId} {
+      allow read: if true;
+      allow create, update: if validScore(userId);
+      allow delete: if false;
     }
   }
 }

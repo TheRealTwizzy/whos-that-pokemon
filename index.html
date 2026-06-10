@@ -72,6 +72,11 @@
               <span>Name or # Filter</span>
               <input id="search-filter" type="search" placeholder="Pikachu or 25" />
             </label>
+
+            <label class="toggle-row">
+              <span>Timed</span>
+              <input id="timed-toggle" type="checkbox" />
+            </label>
           </div>
 
           <div class="length-controls" role="group" aria-label="Quiz length">
@@ -103,6 +108,14 @@
           <div id="dex-list" class="dex-list"></div>
         </section>
 
+        <section class="panel leaderboard-panel" aria-label="Leaderboard">
+          <div class="section-heading">
+            <h2>Leaderboard</h2>
+            <p id="leaderboard-summary">Turn on Timed to view scores for these settings.</p>
+          </div>
+          <div id="leaderboard-list" class="leaderboard-list"></div>
+        </section>
+
         <section id="quiz-panel" class="panel quiz-panel hidden" aria-label="Quiz">
           <div class="quiz-header">
             <div class="metric">
@@ -116,6 +129,10 @@
             <div class="metric">
               <span>Pool</span>
               <strong id="pool-count">0</strong>
+            </div>
+            <div class="metric timer-metric">
+              <span>Timer</span>
+              <strong id="timer-display">00:00.0</strong>
             </div>
           </div>
 

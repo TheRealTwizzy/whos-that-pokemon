@@ -83,8 +83,8 @@ $flatFiles = Get-ChildItem -Path $compiledRes -Recurse -Filter "*.flat" | ForEac
     -A $assetDir `
     --min-sdk-version 23 `
     --target-sdk-version 36 `
-    --version-code 2 `
-    --version-name "2.0" `
+    --version-code 3 `
+    --version-name "3.0" `
     $flatFiles
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed." }
 

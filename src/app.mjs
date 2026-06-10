@@ -1,10 +1,13 @@
 import { createProgressStore } from "./auth.mjs";
 import {
+  buildLeaderboardKey,
   buildChoices,
   buildQuizPool,
+  formatElapsedTime,
   getLengthCap,
   getSpriteUrl,
   isCorrectAnswer,
+  isLeaderboardEligible,
   shuffle,
 } from "./core.mjs";
 import { loadPokemonCatalog } from "./pokemon-api.mjs";
@@ -23,6 +26,7 @@ const elements = {
   guessMode: $("#guess-mode"),
   answerStyle: $("#answer-style"),
   presentation: $("#presentation"),
+  timedToggle: $("#timed-toggle"),
   typeFilter: $("#type-filter"),
   generationFilter: $("#generation-filter"),
   searchFilter: $("#search-filter"),
@@ -33,11 +37,14 @@ const elements = {
   dexSummary: $("#dex-summary"),
   dexFill: $("#dex-fill"),
   dexList: $("#dex-list"),
+  leaderboardSummary: $("#leaderboard-summary"),
+  leaderboardList: $("#leaderboard-list"),
   quizPanel: $("#quiz-panel"),
   summaryPanel: $("#summary-panel"),
   roundCount: $("#round-count"),
   score: $("#score"),
   poolCount: $("#pool-count"),
+  timerDisplay: $("#timer-display"),
   art: $("#pokemon-art"),
   promptTitle: $("#prompt-title"),
   promptDetail: $("#prompt-detail"),
@@ -61,10 +68,17 @@ const state = {
   rounds: [],
   choices: [],
   pool: [],
+  currentSettings: null,
+  currentBoardKey: "",
   currentIndex: 0,
   score: 0,
   revealed: false,
+  timerId: null,
+  timerStartedAt: 0,
+  elapsedMs: 0,
 };
+
+let leaderboardRequestId = 0;
 
 const progressStore = createProgressStore((progress) => {
   state.progress = progress;
@@ -90,6 +104,7 @@ function bindEvents() {
     elements.guessMode,
     elements.answerStyle,
     elements.presentation,
+    elements.timedToggle,
     elements.typeFilter,
     elements.generationFilter,
     elements.searchFilter,
@@ -156,11 +171,14 @@ function updateSetupPreview() {
   if (!state.catalog) return;
   state.pool = getFilteredPool();
   const length = getConfiguredLength(state.pool.length);
+  state.currentSettings = getQuizSettings(state.pool.length);
+  state.currentBoardKey = buildLeaderboardKey(state.currentSettings);
   elements.start.disabled = state.pool.length === 0;
   elements.catalogStatus.textContent =
     `${state.pool.length} Pokemon match filters. Next quiz will use ${length}.`;
   elements.customLength.max = String(Math.max(10, state.pool.length));
   renderDex();
+  void renderLeaderboard();
 }
 
 function getFilteredPool() {
@@ -180,9 +198,25 @@ function getConfiguredLength(poolSize) {
   });
 }
 
+function getQuizSettings(poolSize = state.pool.length) {
+  return {
+    timed: elements.timedToggle.checked,
+    lengthMode: state.lengthMode,
+    length: getConfiguredLength(poolSize),
+    guessMode: elements.guessMode.value,
+    answerStyle: elements.answerStyle.value,
+    presentation: elements.presentation.value,
+    type: elements.typeFilter.value,
+    generation: elements.generationFilter.value,
+    search: elements.searchFilter.value.trim(),
+  };
+}
+
 function startQuiz() {
   state.pool = getFilteredPool();
-  const length = getConfiguredLength(state.pool.length);
+  state.currentSettings = getQuizSettings(state.pool.length);
+  state.currentBoardKey = buildLeaderboardKey(state.currentSettings);
+  const length = state.currentSettings.length;
   if (length < 1) {
     setMessage("No Pokemon match those filters.", "wrong");
     return;
@@ -192,15 +226,18 @@ function startQuiz() {
   state.currentIndex = 0;
   state.score = 0;
   state.revealed = false;
+  startTimer();
   elements.summaryPanel.classList.add("hidden");
   elements.quizPanel.classList.remove("hidden");
   renderRound();
 }
 
 function showSetup() {
+  stopTimer();
   elements.quizPanel.classList.add("hidden");
   elements.summaryPanel.classList.add("hidden");
   elements.message.textContent = "";
+  renderTimer();
 }
 
 function renderRound() {
@@ -217,6 +254,7 @@ function renderRound() {
   elements.roundCount.textContent = `${roundNumber}/${state.rounds.length}`;
   elements.score.textContent = String(state.score);
   elements.poolCount.textContent = String(state.pool.length);
+  renderTimer();
   elements.promptTitle.textContent = getPromptTitle(guessMode);
   elements.promptDetail.textContent = getPromptDetail(pokemon, guessMode);
   elements.input.value = "";
@@ -324,7 +362,7 @@ function revealPokemon(message, tone) {
 
 function nextRound() {
   if (state.currentIndex + 1 >= state.rounds.length) {
-    finishQuiz();
+    void finishQuiz();
     return;
   }
 
@@ -332,13 +370,20 @@ function nextRound() {
   renderRound();
 }
 
-function finishQuiz() {
+async function finishQuiz() {
+  const elapsedMs = stopTimer();
   const percent = Math.round((state.score / state.rounds.length) * 100);
   elements.quizPanel.classList.add("hidden");
   elements.summaryPanel.classList.remove("hidden");
-  elements.summaryText.textContent =
-    `You scored ${state.score} of ${state.rounds.length} (${percent}%). Correct guesses were added to your Pokedex.`;
+  const scoreResult = await recordTimedScore(elapsedMs);
+  elements.summaryText.textContent = [
+    `You scored ${state.score} of ${state.rounds.length} (${percent}%).`,
+    state.currentSettings.timed ? `Time: ${formatElapsedTime(elapsedMs)}.` : "",
+    scoreResult,
+    "Correct guesses were added to your Pokedex.",
+  ].filter(Boolean).join(" ");
   renderDex();
+  await renderLeaderboard();
 }
 
 function renderAuth() {
@@ -364,6 +409,150 @@ function renderDex() {
   elements.dexList.replaceChildren(
     ...filtered.slice(0, 300).map((pokemon) => renderDexEntry(pokemon, caughtIds.has(pokemon.id))),
   );
+}
+
+async function renderLeaderboard() {
+  if (!state.catalog) return;
+
+  const requestId = ++leaderboardRequestId;
+  const settings = getQuizSettings(state.pool.length || getFilteredPool().length);
+  const boardKey = buildLeaderboardKey(settings);
+  const progress = state.progress ?? progressStore.getState();
+  const personalBest = progress.personalScores?.[boardKey];
+
+  if (!settings.timed) {
+    elements.leaderboardSummary.textContent = "Turn on Timed to view scores for these settings.";
+    renderLeaderboardRows([]);
+    return;
+  }
+
+  if (settings.lengthMode === "custom") {
+    elements.leaderboardSummary.textContent = personalBest
+      ? `Custom timed personal best: ${personalBest.correct}/${personalBest.total} in ${formatElapsedTime(personalBest.elapsedMs)}.`
+      : "Custom timed runs save personal bests only.";
+    renderLeaderboardRows([]);
+    return;
+  }
+
+  if (!isLeaderboardEligible(settings, { uid: "leaderboard-preview" })) {
+    elements.leaderboardSummary.textContent =
+      "Public leaderboards require an actual 25, 50, 150, or 250-question timed quiz.";
+    renderLeaderboardRows([]);
+    return;
+  }
+
+  elements.leaderboardSummary.textContent = personalBest
+    ? `Your best here: ${personalBest.correct}/${personalBest.total} in ${formatElapsedTime(personalBest.elapsedMs)}. Loading public scores...`
+    : "Loading public scores for these settings...";
+
+  try {
+    const scores = await progressStore.loadLeaderboard(boardKey);
+    if (requestId !== leaderboardRequestId) return;
+    elements.leaderboardSummary.textContent = scores.length
+      ? "Public timed leaderboard for the current setup."
+      : "No public scores for this setup yet.";
+    renderLeaderboardRows(scores);
+  } catch (error) {
+    if (requestId !== leaderboardRequestId) return;
+    elements.leaderboardSummary.textContent = `Leaderboard unavailable: ${error.message}`;
+    renderLeaderboardRows([]);
+  }
+}
+
+function renderLeaderboardRows(scores) {
+  if (!scores.length) {
+    const empty = document.createElement("div");
+    empty.className = "leaderboard-empty";
+    empty.textContent = "No scores to show.";
+    elements.leaderboardList.replaceChildren(empty);
+    return;
+  }
+
+  elements.leaderboardList.replaceChildren(
+    ...scores.map((score, index) => {
+      const row = document.createElement("div");
+      row.className = "leaderboard-entry";
+      row.innerHTML = `
+        <span class="rank">#${index + 1}</span>
+        <span>${escapeText(score.displayName || "Trainer")}</span>
+        <span>${Number(score.correct)}/${Number(score.total)}</span>
+        <span>${formatElapsedTime(score.elapsedMs)}</span>
+      `;
+      return row;
+    }),
+  );
+}
+
+async function recordTimedScore(elapsedMs) {
+  if (!state.currentSettings?.timed) return "";
+
+  const progress = state.progress ?? progressStore.getState();
+  const score = {
+    boardKey: state.currentBoardKey,
+    uid: progress.user?.uid ?? "guest",
+    displayName: progress.user?.displayName ?? "Guest",
+    correct: state.score,
+    total: state.rounds.length,
+    elapsedMs,
+    accuracy: state.rounds.length ? state.score / state.rounds.length : 0,
+    settings: state.currentSettings,
+    completedAt: new Date().toISOString(),
+  };
+
+  const personal = await progressStore.recordPersonalScore(state.currentBoardKey, score);
+  const personalText = personal.saved ? "New personal best saved." : "Personal best unchanged.";
+
+  if (!isLeaderboardEligible(state.currentSettings, progress.user)) {
+    if (state.currentSettings.lengthMode === "custom") {
+      return `${personalText} Custom timed runs do not submit publicly.`;
+    }
+    if (!isLeaderboardEligible(state.currentSettings, { uid: "leaderboard-preview" })) {
+      return `${personalText} Public leaderboards require an actual 25, 50, 150, or 250-question timed quiz.`;
+    }
+    return `${personalText} Sign in with Google to submit public timed scores.`;
+  }
+
+  const publicResult = await progressStore.submitLeaderboardScore(state.currentBoardKey, score);
+  return publicResult.submitted
+    ? `${personalText} Public leaderboard updated.`
+    : `${personalText} ${publicResult.reason}`;
+}
+
+function startTimer() {
+  stopTimer();
+  state.elapsedMs = 0;
+  if (!state.currentSettings?.timed) {
+    renderTimer();
+    return;
+  }
+
+  state.timerStartedAt = performance.now();
+  state.timerId = window.setInterval(() => {
+    state.elapsedMs = performance.now() - state.timerStartedAt;
+    renderTimer();
+  }, 100);
+  renderTimer();
+}
+
+function stopTimer() {
+  if (state.timerId) {
+    window.clearInterval(state.timerId);
+    state.timerId = null;
+  }
+
+  if (state.currentSettings?.timed && state.timerStartedAt) {
+    state.elapsedMs = performance.now() - state.timerStartedAt;
+    state.timerStartedAt = 0;
+  }
+
+  renderTimer();
+  return state.elapsedMs;
+}
+
+function renderTimer() {
+  elements.timerDisplay.textContent = state.currentSettings?.timed
+    ? formatElapsedTime(state.elapsedMs)
+    : "Untimed";
 }
 
 function renderDexEntry(pokemon, caught) {
@@ -417,6 +606,12 @@ function option(value, label) {
   element.value = value;
   element.textContent = label;
   return element;
+}
+
+function escapeText(value) {
+  const span = document.createElement("span");
+  span.textContent = value;
+  return span.innerHTML;
 }
 
 function capitalize(value) {

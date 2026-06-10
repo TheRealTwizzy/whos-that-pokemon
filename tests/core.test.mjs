@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 
 import {
   buildChoices,
+  buildLeaderboardKey,
   buildQuizPool,
   formatPokemonName,
+  formatElapsedTime,
   getLengthCap,
   isCorrectAnswer,
+  isBetterScore,
+  isLeaderboardEligible,
   mergeIdSets,
   normalizeAnswer,
 } from "../src/core.mjs";
@@ -149,4 +153,62 @@ test("does not include a second correct type as a false multiple-choice distract
 
 test("merges locally and remotely tracked Pokedex ids without duplicates", () => {
   assert.deepEqual(mergeIdSets([1, 4, 4], [4, 25, 152]), [1, 4, 25, 152]);
+});
+
+test("formats elapsed timed quiz values as mm:ss.t", () => {
+  assert.equal(formatElapsedTime(0), "00:00.0");
+  assert.equal(formatElapsedTime(4250), "00:04.2");
+  assert.equal(formatElapsedTime(61_980), "01:01.9");
+  assert.equal(formatElapsedTime(10 * 60_000 + 4_090), "10:04.0");
+});
+
+test("builds stable leaderboard keys from quiz settings", () => {
+  const settings = {
+    timed: true,
+    lengthMode: "preset",
+    length: 25,
+    guessMode: "name",
+    answerStyle: "input",
+    presentation: "silhouette",
+    type: "electric",
+    generation: "1",
+    search: "Pikachu",
+  };
+
+  assert.equal(
+    buildLeaderboardKey(settings),
+    "v1|len:25|guess:name|style:input|present:silhouette|type:electric|gen:1|search:pikachu",
+  );
+  assert.equal(
+    buildLeaderboardKey({ ...settings, search: "  PIKACHU  " }),
+    buildLeaderboardKey(settings),
+  );
+});
+
+test("allows public leaderboard submission only for signed-in timed standard-length quizzes", () => {
+  const settings = {
+    timed: true,
+    lengthMode: "preset",
+    length: 50,
+    guessMode: "type",
+    answerStyle: "choice",
+    presentation: "color",
+    type: "all",
+    generation: "all",
+    search: "",
+  };
+  const user = { uid: "abc123", displayName: "Ash" };
+
+  assert.equal(isLeaderboardEligible(settings, user), true);
+  assert.equal(isLeaderboardEligible({ ...settings, timed: false }, user), false);
+  assert.equal(isLeaderboardEligible({ ...settings, length: 10 }, user), false);
+  assert.equal(isLeaderboardEligible({ ...settings, lengthMode: "custom" }, user), false);
+  assert.equal(isLeaderboardEligible(settings, null), false);
+});
+
+test("compares leaderboard scores by correct answers then faster elapsed time", () => {
+  assert.equal(isBetterScore({ correct: 20, elapsedMs: 90_000 }, { correct: 19, elapsedMs: 1 }), true);
+  assert.equal(isBetterScore({ correct: 20, elapsedMs: 80_000 }, { correct: 20, elapsedMs: 90_000 }), true);
+  assert.equal(isBetterScore({ correct: 19, elapsedMs: 1 }, { correct: 20, elapsedMs: 90_000 }), false);
+  assert.equal(isBetterScore({ correct: 20, elapsedMs: 90_000 }, null), true);
 });

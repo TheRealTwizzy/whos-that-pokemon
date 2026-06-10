@@ -14,12 +14,14 @@ The public page includes a direct Android APK download at
 - Supports optional Google login with Firebase Auth.
 - Tracks a Pokedex of correct guesses locally for guests and in Firestore for
   signed-in players.
+- Supports timed stopwatch runs with personal bests and public leaderboards.
 - Filters the quiz pool by type, generation, Pokedex number, or name.
 - Supports quiz customization:
   - Guess mode: name, type, generation, or Pokedex number.
   - Answer style: multiple choice or typed best guess.
   - Presentation: silhouette or colored image.
   - Length: `25`, `50`, `150`, `250`, or custom from `10` to the current pool size.
+  - Timed: stopwatch mode starting at `00:00.0`.
 
 ## Source References
 
@@ -44,9 +46,10 @@ If the Firebase CLI is installed and authenticated, deploy rules with:
 firebase deploy --only firestore:rules
 ```
 
-Firestore progress documents are stored at
-`pokemonQuizProfiles/{uid}`. Rules only allow a signed-in user to read and write
-their own document.
+Firestore progress documents are stored at `pokemonQuizProfiles/{uid}`. Personal
+timed scores are stored under each profile. Public leaderboard scores are stored
+under `leaderboards/{boardKey}/scores/{uid}` and are readable by anyone. Writes
+require Google sign-in and only allow users to write their own score document.
 
 ## Tests
 
