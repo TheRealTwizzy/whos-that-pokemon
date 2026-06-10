@@ -43,7 +43,11 @@
         font: inherit;
       }
 
-      button {
+      button,
+      .download-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         min-height: 42px;
         border: 2px solid var(--line);
         border-radius: 8px;
@@ -52,14 +56,17 @@
         color: var(--ink);
         cursor: pointer;
         font-weight: 900;
+        text-decoration: none;
       }
 
-      button:hover:not(:disabled) {
+      button:hover:not(:disabled),
+      .download-link:hover {
         transform: translateY(-1px);
         box-shadow: 0 5px 0 var(--line);
       }
 
-      button:active:not(:disabled) {
+      button:active:not(:disabled),
+      .download-link:active {
         transform: translateY(3px);
         box-shadow: 0 1px 0 var(--line);
       }
@@ -70,7 +77,8 @@
       }
 
       button:focus-visible,
-      input:focus-visible {
+      input:focus-visible,
+      .download-link:focus-visible {
         outline: 4px solid rgba(40, 119, 201, 0.28);
         outline-offset: 3px;
       }
@@ -194,13 +202,25 @@
       }
 
       .length-grid button,
-      .primary {
+      .primary,
+      .download-link {
         padding: 12px 14px;
       }
 
       .length-grid button[aria-pressed="true"],
       .primary {
         background: var(--yellow);
+      }
+
+      .setup-actions {
+        width: min(100%, 480px);
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .download-link {
+        background: #fff;
       }
 
       .quiz {
@@ -385,6 +405,14 @@
         display: none !important;
       }
 
+      .native-app [data-web-only] {
+        display: none !important;
+      }
+
+      .native-app .setup-actions {
+        grid-template-columns: 1fr;
+      }
+
       @keyframes float {
         0%,
         100% {
@@ -429,6 +457,10 @@
 
         .length-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .setup-actions {
+          grid-template-columns: 1fr;
         }
 
         .quiz {
@@ -480,7 +512,10 @@
               <button type="button" data-length="50">50</button>
               <button type="button" data-length="151">151</button>
             </div>
-            <button id="start-button" class="primary" type="button">Start quiz</button>
+            <div class="setup-actions">
+              <button id="start-button" class="primary" type="button">Start quiz</button>
+              <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Download APK</a>
+            </div>
           </section>
 
           <section id="quiz-screen" class="screen quiz hidden" aria-label="Quiz">
@@ -701,6 +736,10 @@
       };
 
       const $ = (selector) => document.querySelector(selector);
+      if (location.href.startsWith("file:///android_asset/")) {
+        document.documentElement.classList.add("native-app");
+      }
+
       const elements = {
         setup: $("#setup-screen"),
         quiz: $("#quiz-screen"),
