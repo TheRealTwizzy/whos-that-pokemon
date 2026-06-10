@@ -5,6 +5,7 @@ import {
   buildChoices,
   buildLeaderboardKey,
   buildQuizPool,
+  getAccessGate,
   formatPokemonName,
   formatElapsedTime,
   getLengthCap,
@@ -12,9 +13,10 @@ import {
   isBetterScore,
   isLeaderboardEligible,
   mergeIdSets,
+  normalizePokedexCatalog,
   normalizeAnswer,
 } from "../src/core.mjs";
-import { idFromResource } from "../src/pokemon-api.mjs";
+import { idFromResource, normalizeStaticCatalog } from "../src/pokemon-api.mjs";
 
 const SAMPLE_POKEMON = [
   {
@@ -155,6 +157,58 @@ test("merges locally and remotely tracked Pokedex ids without duplicates", () =>
   assert.deepEqual(mergeIdSets([1, 4, 4], [4, 25, 152]), [1, 4, 25, 152]);
 });
 
+test("keeps the app locked until a guest, registered, or Google session exists", () => {
+  assert.deepEqual(getAccessGate({ authReady: false, access: null, user: null }), {
+    locked: true,
+    method: "loading",
+    label: "Loading trainer access...",
+  });
+  assert.deepEqual(getAccessGate({ authReady: true, access: null, user: null }), {
+    locked: true,
+    method: "locked",
+    label: "PokeDex locked. Choose Guest, Register, or Google.",
+  });
+  assert.equal(getAccessGate({ authReady: true, access: { method: "guest" }, user: null }).locked, false);
+  assert.equal(getAccessGate({ authReady: true, access: { method: "registered" }, user: null }).locked, false);
+  assert.deepEqual(getAccessGate({ authReady: true, access: null, user: { uid: "google-1" } }), {
+    locked: false,
+    method: "google",
+    label: "Google trainer access granted.",
+  });
+});
+
+test("normalizes structured Pokedex data into a quiz catalog with log entries", () => {
+  const catalog = normalizePokedexCatalog({
+    pokemon: [
+      {
+        nationalDexNumber: 25,
+        slug: "pikachu",
+        species: "Pikachu",
+        generation: 1,
+        region: "kanto",
+        types: ["Electric"],
+        flavorText: "When it is angered, it immediately discharges the energy stored in the pouches in its cheeks.",
+      },
+      {
+        id: 906,
+        name: "sprigatito",
+        generationLabel: "Generation IX",
+        type1: "Grass",
+        pokedexEntry: "Its fluffy fur is similar in composition to plants.",
+      },
+    ],
+  }, { loadedAt: 1234 });
+
+  assert.equal(catalog.loadedAt, 1234);
+  assert.deepEqual(catalog.pokemon.map((pokemon) => pokemon.id), [25, 906]);
+  assert.equal(catalog.pokemon[0].displayName, "Pikachu");
+  assert.deepEqual(catalog.pokemon[0].types, ["electric"]);
+  assert.equal(catalog.pokemon[0].pokedexEntry.startsWith("When it is angered"), true);
+  assert.equal(catalog.pokemon[1].generationId, 9);
+  assert.equal(catalog.pokemon[1].region, "paldea");
+  assert.equal(catalog.generations.some((generation) => generation.id === 9), true);
+});
+
 test("formats elapsed timed quiz values as mm:ss.t", () => {
   assert.equal(formatElapsedTime(0), "00:00.0");
   assert.equal(formatElapsedTime(4250), "00:04.2");
@@ -197,12 +251,14 @@ test("allows public leaderboard submission only for signed-in timed standard-len
     generation: "all",
     search: "",
   };
-  const user = { uid: "abc123", displayName: "Ash" };
+  const user = { uid: "abc123", displayName: "Ash", provider: "google" };
 
   assert.equal(isLeaderboardEligible(settings, user), true);
   assert.equal(isLeaderboardEligible({ ...settings, timed: false }, user), false);
   assert.equal(isLeaderboardEligible({ ...settings, length: 10 }, user), false);
   assert.equal(isLeaderboardEligible({ ...settings, lengthMode: "custom" }, user), false);
+  assert.equal(isLeaderboardEligible(settings, { uid: "guest", provider: "guest" }), false);
+  assert.equal(isLeaderboardEligible(settings, { uid: "site:ash", provider: "site" }), false);
   assert.equal(isLeaderboardEligible(settings, null), false);
 });
 
@@ -211,4 +267,33 @@ test("compares leaderboard scores by correct answers then faster elapsed time", 
   assert.equal(isBetterScore({ correct: 20, elapsedMs: 80_000 }, { correct: 20, elapsedMs: 90_000 }), true);
   assert.equal(isBetterScore({ correct: 19, elapsedMs: 1 }, { correct: 20, elapsedMs: 90_000 }), false);
   assert.equal(isBetterScore({ correct: 20, elapsedMs: 90_000 }, null), true);
+});
+
+test("normalizes static Pokedex data into the catalog shape used by the quiz", () => {
+  const catalog = normalizeStaticCatalog({
+    pokemon: [
+      {
+        id: 25,
+        name: "pikachu",
+        displayName: "Pikachu",
+        generationId: 1,
+        generationLabel: "Generation I",
+        region: "kanto",
+        types: ["electric"],
+        heightM: 0.4,
+        weightKg: 6,
+        category: "Mouse Pokemon",
+        abilities: ["static", "lightning-rod"],
+        description: "An Electric type Pokemon first discovered in Kanto.",
+        artwork: "https://example.com/pikachu.png",
+      },
+    ],
+    generations: [{ id: 1, label: "Generation I", region: "kanto" }],
+    types: ["electric"],
+  });
+
+  assert.equal(catalog.pokemon.length, 1);
+  assert.equal(catalog.pokemon[0].displayName, "Pikachu");
+  assert.deepEqual(catalog.types, ["electric"]);
+  assert.deepEqual(catalog.generations.map((generation) => generation.label), ["Generation I"]);
 });

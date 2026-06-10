@@ -3,175 +3,265 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Who's That Pokemon?</title>
+    <title>PokeDex Trainer OS</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
+    <div id="boot-screen" class="boot-screen" aria-live="polite">
+      <div class="boot-module">
+        <span class="status-light"></span>
+        <p class="eyebrow">PokeDex OS</p>
+        <h1>Boot Sequence</h1>
+        <div class="boot-bar" aria-hidden="true"><span></span></div>
+        <p id="boot-status">Loading trainer interface...</p>
+      </div>
+    </div>
+
+    <div class="app-shell pokedex-device" data-device-locked="true">
+      <div class="device-hinge" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+
+      <header class="topbar device-lid">
+        <div class="lens-cluster" aria-hidden="true">
+          <span class="camera-lens"></span>
+          <span class="mini-light red-light"></span>
+          <span class="mini-light yellow-light"></span>
+          <span class="mini-light green-light"></span>
+        </div>
+        <div class="device-title">
           <p class="eyebrow">National Dex Quiz</p>
-          <h1>Who's That Pokemon?</h1>
+          <h1>PokeDex</h1>
         </div>
         <div class="auth-panel">
           <span id="auth-status">Guest mode loading...</span>
-          <button id="login-button" type="button">Google Login</button>
-          <button id="logout-button" type="button" class="hidden">Logout</button>
+          <button id="logout-button" type="button" class="hidden">Lock</button>
         </div>
       </header>
 
-      <main class="layout">
-        <section class="panel setup-panel" aria-label="Quiz setup">
-          <div class="section-heading">
-            <h2>Quiz Setup</h2>
-            <p id="catalog-status">Loading every generation from PokeAPI...</p>
+      <div class="device-body">
+        <aside class="hardware-rail" aria-hidden="true">
+          <span class="rail-notch"></span>
+          <span class="rail-button"></span>
+          <span class="rail-button small"></span>
+          <span class="speaker-slots"></span>
+        </aside>
+
+        <section class="screen-bezel" aria-label="PokeDex screen">
+          <div class="screen-status">
+            <span>TRAINER OS</span>
+            <span id="screen-clock">READY</span>
           </div>
 
-          <div class="control-grid">
-            <label>
-              <span>Guess</span>
-              <select id="guess-mode">
-                <option value="name">Name</option>
-                <option value="type">Type</option>
-                <option value="generation">Generation</option>
-                <option value="number">Pokedex #</option>
-              </select>
-            </label>
+          <section id="device-lock-screen" class="lock-screen" aria-label="Trainer login">
+            <div class="closed-shell-preview" aria-hidden="true">
+              <span class="closed-shell-light"></span>
+              <span class="closed-shell-line"></span>
+            </div>
+            <div class="lock-copy">
+              <p class="eyebrow">Access Required</p>
+              <h2>Trainer identity locked</h2>
+              <p id="lock-status">Guest access, local ID, or Google Auth accepted.</p>
+            </div>
+            <div class="login-actions">
+              <button id="guest-button" class="primary" type="button">Guest</button>
+              <button id="register-button" type="button">Register</button>
+              <button id="login-button" type="button">Google Auth</button>
+            </div>
+            <form id="register-form" class="register-form hidden">
+              <label for="register-name">
+                <span>Trainer Name</span>
+                <input id="register-name" type="text" maxlength="24" autocomplete="nickname" placeholder="Red" />
+              </label>
+              <button type="submit">Create Local ID</button>
+            </form>
+          </section>
 
-            <label>
-              <span>Style</span>
-              <select id="answer-style">
-                <option value="input">Input best guess</option>
-                <option value="choice">Multiple choice</option>
-              </select>
-            </label>
+          <div id="device-workspace" class="workspace hidden">
+            <nav class="main-menu" aria-label="PokeDex main menu">
+              <button type="button" data-view-target="setup" aria-pressed="true">Quiz</button>
+              <button type="button" data-view-target="dex">PokeDex Log</button>
+              <button type="button" data-view-target="leaderboard">Leaderboard</button>
+              <button type="button" data-view-target="settings">Settings</button>
+            </nav>
 
-            <label>
-              <span>Presentation</span>
-              <select id="presentation">
-                <option value="silhouette">Silhouette</option>
-                <option value="color">Colored image</option>
-              </select>
-            </label>
+            <main class="layout">
+              <section class="panel setup-panel view-panel" data-view="setup" aria-label="Quiz launch">
+                <div class="section-heading">
+                  <p class="eyebrow">Program Slot 01</p>
+                  <h2>Who's That Pokemon?</h2>
+                  <p id="catalog-status">Loading every generation from PokeAPI...</p>
+                </div>
 
-            <label>
-              <span>Type Filter</span>
-              <select id="type-filter">
-                <option value="all">All types</option>
-              </select>
-            </label>
+                <div class="mission-card">
+                  <span class="mission-chip">Silhouette Scanner</span>
+                  <p>
+                    Scanner profile loaded. Identification records write to the current trainer archive.
+                  </p>
+                </div>
 
-            <label>
-              <span>Generation Filter</span>
-              <select id="generation-filter">
-                <option value="all">All generations</option>
-              </select>
-            </label>
+                <div class="setup-actions">
+                  <button id="start-button" class="primary" type="button" disabled>Start Quiz</button>
+                  <button id="refresh-data-button" type="button">Refresh Data</button>
+                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Download APK</a>
+                </div>
+              </section>
 
-            <label>
-              <span>Name or # Filter</span>
-              <input id="search-filter" type="search" placeholder="Pikachu or 25" />
-            </label>
+              <section class="panel settings-panel view-panel hidden" data-view="settings" aria-label="PokeDex settings">
+                <div class="section-heading">
+                  <p class="eyebrow">Device Settings</p>
+                  <h2>Quiz Profile</h2>
+                  <p>Configure scanner mode, filters, presentation, and timed runs.</p>
+                </div>
 
-            <label class="toggle-row">
-              <span>Timed</span>
-              <input id="timed-toggle" type="checkbox" />
-            </label>
-          </div>
+                <div class="control-grid">
+                  <label>
+                    <span>Guess</span>
+                    <select id="guess-mode">
+                      <option value="name">Name</option>
+                      <option value="type">Type</option>
+                      <option value="generation">Generation</option>
+                      <option value="number">Pokedex #</option>
+                    </select>
+                  </label>
 
-          <div class="length-controls" role="group" aria-label="Quiz length">
-            <button type="button" data-length="25" aria-pressed="true">25</button>
-            <button type="button" data-length="50">50</button>
-            <button type="button" data-length="150">150</button>
-            <button type="button" data-length="250">250</button>
-            <label class="custom-length">
-              <span>Custom</span>
-              <input id="custom-length" type="number" min="10" value="10" />
-            </label>
-          </div>
+                  <label>
+                    <span>Style</span>
+                    <select id="answer-style">
+                      <option value="input">Input best guess</option>
+                      <option value="choice">Multiple choice</option>
+                    </select>
+                  </label>
 
-          <div class="setup-actions">
-            <button id="start-button" class="primary" type="button" disabled>Start Quiz</button>
-            <button id="refresh-data-button" type="button">Refresh Data</button>
-            <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Download APK</a>
+                  <label>
+                    <span>Presentation</span>
+                    <select id="presentation">
+                      <option value="silhouette">Silhouette</option>
+                      <option value="color">Colored image</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Type Filter</span>
+                    <select id="type-filter">
+                      <option value="all">All types</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Generation Filter</span>
+                    <select id="generation-filter">
+                      <option value="all">All generations</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Name or # Filter</span>
+                    <input id="search-filter" type="search" placeholder="Pikachu or 25" />
+                  </label>
+
+                  <label class="toggle-row">
+                    <span>Timed</span>
+                    <input id="timed-toggle" type="checkbox" />
+                  </label>
+                </div>
+
+                <div class="length-controls" role="group" aria-label="Quiz length">
+                  <button type="button" data-length="25" aria-pressed="true">25</button>
+                  <button type="button" data-length="50">50</button>
+                  <button type="button" data-length="150">150</button>
+                  <button type="button" data-length="250">250</button>
+                  <label class="custom-length">
+                    <span>Custom</span>
+                    <input id="custom-length" type="number" min="10" value="10" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="panel dex-panel view-panel hidden" data-view="dex" aria-label="PokeDex log">
+                <div class="section-heading">
+                  <p class="eyebrow">Archive Slot 151+</p>
+                  <h2>PokeDex Log</h2>
+                  <p id="dex-summary">Correct guesses are tracked locally.</p>
+                </div>
+                <div class="dex-meter" aria-hidden="true">
+                  <div id="dex-fill"></div>
+                </div>
+                <div id="dex-list" class="dex-list"></div>
+              </section>
+
+              <section class="panel leaderboard-panel view-panel hidden" data-view="leaderboard" aria-label="Leaderboard">
+                <div class="section-heading">
+                  <p class="eyebrow">Public Signal</p>
+                  <h2>Leaderboard</h2>
+                  <p id="leaderboard-summary">Turn on Timed to view scores for these settings.</p>
+                </div>
+                <div id="leaderboard-list" class="leaderboard-list"></div>
+              </section>
+
+              <section id="quiz-panel" class="panel quiz-panel hidden" aria-label="Quiz">
+                <div class="quiz-header">
+                  <div class="metric">
+                    <span>Progress</span>
+                    <strong id="round-count">1/25</strong>
+                  </div>
+                  <div class="metric">
+                    <span>Score</span>
+                    <strong id="score">0</strong>
+                  </div>
+                  <div class="metric">
+                    <span>Pool</span>
+                    <strong id="pool-count">0</strong>
+                  </div>
+                  <div class="metric timer-metric">
+                    <span>Timer</span>
+                    <strong id="timer-display">00:00.0</strong>
+                  </div>
+                </div>
+
+                <div class="art-panel">
+                  <img id="pokemon-art" alt="Pokemon quiz prompt" />
+                </div>
+
+                <div class="prompt-row">
+                  <div>
+                    <p class="eyebrow">Current Challenge</p>
+                    <h2 id="prompt-title">Guess the Pokemon name</h2>
+                    <p id="prompt-detail">Make your best guess.</p>
+                  </div>
+                </div>
+
+                <form id="answer-form" class="answer-form">
+                  <label for="guess-input">Answer</label>
+                  <div class="answer-row">
+                    <input id="guess-input" type="text" autocomplete="off" />
+                    <button id="guess-button" type="submit">Guess</button>
+                  </div>
+                </form>
+
+                <div id="choice-grid" class="choice-grid hidden"></div>
+                <p id="message" class="message" role="status"></p>
+
+                <div class="quiz-actions">
+                  <button id="skip-button" type="button">Reveal / Skip</button>
+                  <button id="next-button" type="button" class="hidden">Next</button>
+                  <button id="restart-button" type="button">Main Menu</button>
+                </div>
+              </section>
+
+              <section id="summary-panel" class="panel summary-panel hidden" aria-label="Quiz summary">
+                <p class="eyebrow">Run Complete</p>
+                <h2>Quiz Complete</h2>
+                <p id="summary-text"></p>
+                <button id="summary-restart-button" class="primary" type="button">Return to Menu</button>
+              </section>
+            </main>
           </div>
         </section>
-
-        <section class="panel dex-panel" aria-label="Pokedex progress">
-          <div class="section-heading">
-            <h2>Pokedex</h2>
-            <p id="dex-summary">Correct guesses are tracked locally.</p>
-          </div>
-          <div class="dex-meter" aria-hidden="true">
-            <div id="dex-fill"></div>
-          </div>
-          <div id="dex-list" class="dex-list"></div>
-        </section>
-
-        <section class="panel leaderboard-panel" aria-label="Leaderboard">
-          <div class="section-heading">
-            <h2>Leaderboard</h2>
-            <p id="leaderboard-summary">Turn on Timed to view scores for these settings.</p>
-          </div>
-          <div id="leaderboard-list" class="leaderboard-list"></div>
-        </section>
-
-        <section id="quiz-panel" class="panel quiz-panel hidden" aria-label="Quiz">
-          <div class="quiz-header">
-            <div class="metric">
-              <span>Progress</span>
-              <strong id="round-count">1/25</strong>
-            </div>
-            <div class="metric">
-              <span>Score</span>
-              <strong id="score">0</strong>
-            </div>
-            <div class="metric">
-              <span>Pool</span>
-              <strong id="pool-count">0</strong>
-            </div>
-            <div class="metric timer-metric">
-              <span>Timer</span>
-              <strong id="timer-display">00:00.0</strong>
-            </div>
-          </div>
-
-          <div class="art-panel">
-            <img id="pokemon-art" alt="Pokemon quiz prompt" />
-          </div>
-
-          <div class="prompt-row">
-            <div>
-              <p class="eyebrow">Current Challenge</p>
-              <h2 id="prompt-title">Guess the Pokemon name</h2>
-              <p id="prompt-detail">Make your best guess.</p>
-            </div>
-          </div>
-
-          <form id="answer-form" class="answer-form">
-            <label for="guess-input">Answer</label>
-            <div class="answer-row">
-              <input id="guess-input" type="text" autocomplete="off" />
-              <button id="guess-button" type="submit">Guess</button>
-            </div>
-          </form>
-
-          <div id="choice-grid" class="choice-grid hidden"></div>
-          <p id="message" class="message" role="status"></p>
-
-          <div class="quiz-actions">
-            <button id="skip-button" type="button">Reveal / Skip</button>
-            <button id="next-button" type="button" class="hidden">Next</button>
-            <button id="restart-button" type="button">New Setup</button>
-          </div>
-        </section>
-
-        <section id="summary-panel" class="panel summary-panel hidden" aria-label="Quiz summary">
-          <h2>Quiz Complete</h2>
-          <p id="summary-text"></p>
-          <button id="summary-restart-button" class="primary" type="button">Play Again</button>
-        </section>
-      </main>
+      </div>
     </div>
 
     <script src="firebase-config.js"></script>

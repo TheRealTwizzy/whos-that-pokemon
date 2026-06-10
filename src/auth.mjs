@@ -8,7 +8,7 @@ export function createProgressStore(onChange = () => {}) {
   const state = {
     authReady: false,
     authAvailable: false,
-    status: "Guest progress is stored on this device.",
+    status: "PokeDex locked. Choose Guest, Register, or Google Auth.",
     user: null,
     correctPokemonIds: readLocalIds(),
     personalScores: readLocalScores(),
@@ -32,7 +32,7 @@ export function createProgressStore(onChange = () => {}) {
     if (!config || typeof config !== "object" || !config.apiKey) {
       state.authReady = true;
       state.authAvailable = false;
-      state.status = "Guest mode active. Add Firebase config to enable Google login.";
+      state.status = "Guest and local registration available. Add Firebase config to enable Google Auth.";
       emit();
       return getState();
     }
@@ -64,6 +64,7 @@ export function createProgressStore(onChange = () => {}) {
               uid: user.uid,
               displayName: user.displayName || "Google player",
               photoURL: user.photoURL || "",
+              provider: "google",
             }
           : null;
 
@@ -72,7 +73,7 @@ export function createProgressStore(onChange = () => {}) {
           await mergeCloudProgress(user.uid);
           await mergeCloudPersonalScores(user.uid);
         } else {
-          state.status = "Guest progress is stored on this device.";
+          state.status = "PokeDex locked. Choose Guest, Register, or Google Auth.";
         }
         emit();
       });

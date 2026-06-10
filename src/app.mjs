@@ -4,6 +4,7 @@ import {
   buildChoices,
   buildQuizPool,
   formatElapsedTime,
+  getAccessGate,
   getLengthCap,
   getSpriteUrl,
   isCorrectAnswer,
@@ -13,12 +14,24 @@ import {
 import { loadPokemonCatalog } from "./pokemon-api.mjs";
 
 const $ = (selector) => document.querySelector(selector);
+const DEVICE_ACCESS_KEY = "pokemonQuiz.deviceAccess.v1";
 
 if (location.href.startsWith("file:///android_asset/")) {
   document.documentElement.classList.add("native-app");
 }
 
 const elements = {
+  appShell: $(".pokedex-device"),
+  bootScreen: $("#boot-screen"),
+  bootStatus: $("#boot-status"),
+  screenClock: $("#screen-clock"),
+  lockScreen: $("#device-lock-screen"),
+  lockStatus: $("#lock-status"),
+  workspace: $("#device-workspace"),
+  guest: $("#guest-button"),
+  register: $("#register-button"),
+  registerForm: $("#register-form"),
+  registerName: $("#register-name"),
   authStatus: $("#auth-status"),
   login: $("#login-button"),
   logout: $("#logout-button"),
@@ -58,11 +71,19 @@ const elements = {
   restart: $("#restart-button"),
   summaryText: $("#summary-text"),
   summaryRestart: $("#summary-restart-button"),
+  viewButtons: [...document.querySelectorAll("[data-view-target]")],
+  viewPanels: [...document.querySelectorAll("[data-view]")],
 };
+
+const savedDeviceAccess = readDeviceAccess();
 
 const state = {
   catalog: null,
   progress: null,
+  activeView: "setup",
+  deviceUnlocked: Boolean(savedDeviceAccess),
+  deviceAccess: savedDeviceAccess,
+  catalogLoading: false,
   lengthMode: "preset",
   lengthPreset: 25,
   rounds: [],
@@ -83,6 +104,7 @@ let leaderboardRequestId = 0;
 const progressStore = createProgressStore((progress) => {
   state.progress = progress;
   renderAuth();
+  if (isDeviceUnlocked()) void ensureCatalogReady();
   renderDex();
 });
 
@@ -90,9 +112,24 @@ bindEvents();
 await init();
 
 function bindEvents() {
-  elements.login.addEventListener("click", () => progressStore.signIn());
-  elements.logout.addEventListener("click", () => progressStore.signOut());
-  elements.refreshData.addEventListener("click", () => initCatalog({ forceRefresh: true }));
+  elements.guest.addEventListener("click", () => {
+    unlockDevice({ type: "guest", label: "Guest trainer" });
+  });
+  elements.register.addEventListener("click", () => {
+    elements.registerForm.classList.toggle("hidden");
+    if (!elements.registerForm.classList.contains("hidden")) elements.registerName.focus();
+  });
+  elements.registerForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = elements.registerName.value.trim() || "Local Trainer";
+    unlockDevice({ type: "registered", label: name });
+  });
+  elements.login.addEventListener("click", () => {
+    setLockStatus("Opening Google Auth...");
+    void progressStore.signIn();
+  });
+  elements.logout.addEventListener("click", lockDevice);
+  elements.refreshData.addEventListener("click", () => ensureCatalogReady({ forceRefresh: true }));
   elements.start.addEventListener("click", startQuiz);
   elements.form.addEventListener("submit", onGuessSubmit);
   elements.skip.addEventListener("click", revealCurrent);
@@ -129,18 +166,34 @@ function bindEvents() {
     elements.lengthButtons.forEach((button) => button.setAttribute("aria-pressed", "false"));
     updateSetupPreview();
   });
+
+  elements.viewButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveView(button.dataset.viewTarget);
+    });
+  });
 }
 
 async function init() {
   renderAuth();
-  await Promise.all([progressStore.init(), initCatalog()]);
+  updateDeviceShell();
+  await progressStore.init();
+  await ensureCatalogReady();
+  completeBoot();
 }
 
 async function initCatalog({ forceRefresh = false } = {}) {
+  if (!isDeviceUnlocked()) {
+    elements.start.disabled = true;
+    elements.catalogStatus.textContent = "Unlock trainer access to load the PokeDex catalog.";
+    return;
+  }
+
+  state.catalogLoading = true;
   elements.start.disabled = true;
   elements.catalogStatus.textContent = forceRefresh
-    ? "Refreshing PokeAPI catalog..."
-    : "Loading every generation from PokeAPI...";
+    ? "Refreshing PokeDex catalog..."
+    : "Loading PokeDex catalog...";
 
   try {
     state.catalog = await loadPokemonCatalog({ forceRefresh });
@@ -151,7 +204,25 @@ async function initCatalog({ forceRefresh = false } = {}) {
   } catch (error) {
     elements.catalogStatus.textContent = `Catalog load failed: ${error.message}`;
     elements.start.disabled = true;
+  } finally {
+    state.catalogLoading = false;
   }
+}
+
+async function ensureCatalogReady({ forceRefresh = false } = {}) {
+  if (!isDeviceUnlocked()) {
+    elements.start.disabled = true;
+    elements.catalogStatus.textContent = "Unlock trainer access to load the PokeDex catalog.";
+    return;
+  }
+
+  if (state.catalogLoading) return;
+  if (state.catalog && !forceRefresh) {
+    updateSetupPreview();
+    return;
+  }
+
+  await initCatalog({ forceRefresh });
 }
 
 function populateFilters() {
@@ -169,11 +240,17 @@ function populateFilters() {
 
 function updateSetupPreview() {
   if (!state.catalog) return;
+  if (!isDeviceUnlocked()) {
+    elements.start.disabled = true;
+    elements.catalogStatus.textContent = "Unlock trainer access to load the PokeDex catalog.";
+    return;
+  }
+
   state.pool = getFilteredPool();
   const length = getConfiguredLength(state.pool.length);
   state.currentSettings = getQuizSettings(state.pool.length);
   state.currentBoardKey = buildLeaderboardKey(state.currentSettings);
-  elements.start.disabled = state.pool.length === 0;
+  elements.start.disabled = state.pool.length === 0 || !isDeviceUnlocked();
   elements.catalogStatus.textContent =
     `${state.pool.length} Pokemon match filters. Next quiz will use ${length}.`;
   elements.customLength.max = String(Math.max(10, state.pool.length));
@@ -213,6 +290,16 @@ function getQuizSettings(poolSize = state.pool.length) {
 }
 
 function startQuiz() {
+  if (!isDeviceUnlocked()) {
+    setLockStatus("Trainer access is required before scanner initialization.");
+    updateDeviceShell();
+    return;
+  }
+  if (!state.catalog) {
+    void ensureCatalogReady();
+    return;
+  }
+
   state.pool = getFilteredPool();
   state.currentSettings = getQuizSettings(state.pool.length);
   state.currentBoardKey = buildLeaderboardKey(state.currentSettings);
@@ -227,6 +314,8 @@ function startQuiz() {
   state.score = 0;
   state.revealed = false;
   startTimer();
+  hideViewPanels();
+  elements.viewButtons.forEach((button) => button.setAttribute("aria-pressed", "false"));
   elements.summaryPanel.classList.add("hidden");
   elements.quizPanel.classList.remove("hidden");
   renderRound();
@@ -238,6 +327,7 @@ function showSetup() {
   elements.summaryPanel.classList.add("hidden");
   elements.message.textContent = "";
   renderTimer();
+  setActiveView("setup");
 }
 
 function renderRound() {
@@ -248,7 +338,7 @@ function renderRound() {
 
   state.revealed = false;
   state.choices = [];
-  elements.art.src = getSpriteUrl(pokemon.id);
+  elements.art.src = getPokemonArtworkUrl(pokemon);
   elements.art.alt = `${pokemon.displayName} quiz artwork`;
   elements.art.className = presentation === "silhouette" ? "silhouette" : "";
   elements.roundCount.textContent = `${roundNumber}/${state.rounds.length}`;
@@ -374,7 +464,9 @@ async function finishQuiz() {
   const elapsedMs = stopTimer();
   const percent = Math.round((state.score / state.rounds.length) * 100);
   elements.quizPanel.classList.add("hidden");
+  hideViewPanels();
   elements.summaryPanel.classList.remove("hidden");
+  elements.viewButtons.forEach((button) => button.setAttribute("aria-pressed", "false"));
   const scoreResult = await recordTimedScore(elapsedMs);
   elements.summaryText.textContent = [
     `You scored ${state.score} of ${state.rounds.length} (${percent}%).`,
@@ -388,13 +480,25 @@ async function finishQuiz() {
 
 function renderAuth() {
   const progress = state.progress ?? progressStore.getState();
-  elements.authStatus.textContent = progress.status;
+  if (progress.user) {
+    state.deviceUnlocked = true;
+    state.deviceAccess = { type: "google", label: progress.user.displayName || "Google trainer" };
+  } else if (state.deviceAccess?.type === "google") {
+    state.deviceUnlocked = false;
+    state.deviceAccess = null;
+  }
+
+  const gate = getDeviceGate(progress);
+  state.deviceUnlocked = !gate.locked;
+  elements.authStatus.textContent = getAuthStatusText(progress);
   elements.login.disabled = !progress.authAvailable;
   elements.login.classList.toggle("hidden", Boolean(progress.user));
-  elements.logout.classList.toggle("hidden", !progress.user);
+  elements.logout.classList.toggle("hidden", gate.locked);
+  updateDeviceShell();
 }
 
 function renderDex() {
+  if (!isDeviceUnlocked()) return;
   if (!state.catalog) return;
   const caughtIds = new Set((state.progress ?? progressStore.getState()).correctPokemonIds);
   const filtered = state.pool.length ? state.pool : getFilteredPool();
@@ -412,6 +516,7 @@ function renderDex() {
 }
 
 async function renderLeaderboard() {
+  if (!isDeviceUnlocked()) return;
   if (!state.catalog) return;
 
   const requestId = ++leaderboardRequestId;
@@ -434,7 +539,7 @@ async function renderLeaderboard() {
     return;
   }
 
-  if (!isLeaderboardEligible(settings, { uid: "leaderboard-preview" })) {
+  if (!isLeaderboardEligible(settings, { uid: "leaderboard-preview", provider: "google" })) {
     elements.leaderboardSummary.textContent =
       "Public leaderboards require an actual 25, 50, 150, or 250-question timed quiz.";
     renderLeaderboardRows([]);
@@ -487,10 +592,11 @@ async function recordTimedScore(elapsedMs) {
   if (!state.currentSettings?.timed) return "";
 
   const progress = state.progress ?? progressStore.getState();
+  const trainer = getCurrentTrainerIdentity(progress);
   const score = {
     boardKey: state.currentBoardKey,
-    uid: progress.user?.uid ?? "guest",
-    displayName: progress.user?.displayName ?? "Guest",
+    uid: trainer?.uid ?? "guest",
+    displayName: trainer?.displayName ?? "Guest",
     correct: state.score,
     total: state.rounds.length,
     elapsedMs,
@@ -506,7 +612,7 @@ async function recordTimedScore(elapsedMs) {
     if (state.currentSettings.lengthMode === "custom") {
       return `${personalText} Custom timed runs do not submit publicly.`;
     }
-    if (!isLeaderboardEligible(state.currentSettings, { uid: "leaderboard-preview" })) {
+    if (!isLeaderboardEligible(state.currentSettings, { uid: "leaderboard-preview", provider: "google" })) {
       return `${personalText} Public leaderboards require an actual 25, 50, 150, or 250-question timed quiz.`;
     }
     return `${personalText} Sign in with Google to submit public timed scores.`;
@@ -559,10 +665,24 @@ function renderDexEntry(pokemon, caught) {
   const row = document.createElement("div");
   row.className = "dex-entry";
   row.dataset.caught = String(caught);
+  const typeText = pokemon.types.map(capitalize).join(" / ") || "Unknown";
+  const abilityText = formatAbilityList(pokemon.abilities);
+  const measurementText = formatMeasurements(pokemon);
+  const description = pokemon.description || pokemon.flavorText || pokemon.pokedexEntry || "No field entry available.";
+  const category = pokemon.category || pokemon.genus || "Unclassified";
   row.innerHTML = `
-    <strong>#${String(pokemon.id).padStart(3, "0")}</strong>
-    <span>${caught ? pokemon.displayName : "Unknown"}</span>
-    <span>${caught ? pokemon.types.map(capitalize).join(" / ") : pokemon.generationLabel}</span>
+    <img src="${escapeText(getPokemonArtworkUrl(pokemon))}" alt="" loading="lazy" />
+    <div class="dex-entry-main">
+      <strong>#${String(pokemon.id).padStart(3, "0")} ${escapeText(pokemon.displayName)}</strong>
+      <span>${escapeText(category)} - ${escapeText(pokemon.generationLabel)}</span>
+      <p>${escapeText(description)}</p>
+    </div>
+    <div class="dex-entry-meta">
+      <span>${escapeText(typeText)}</span>
+      <span>${escapeText(measurementText)}</span>
+      <span>${escapeText(abilityText)}</span>
+      <span>${caught ? "Logged" : "Unconfirmed"}</span>
+    </div>
   `;
   return row;
 }
@@ -592,6 +712,10 @@ function getRevealText(pokemon) {
   return `${pokemon.displayName} is #${String(pokemon.id).padStart(3, "0")} from ${pokemon.generationLabel}.`;
 }
 
+function getPokemonArtworkUrl(pokemon) {
+  return pokemon.artworkUrl || pokemon.spriteUrl || pokemon.sprites?.officialArtwork || getSpriteUrl(pokemon.id);
+}
+
 function getCurrentPokemon() {
   return state.rounds[state.currentIndex];
 }
@@ -599,6 +723,125 @@ function getCurrentPokemon() {
 function setMessage(text, tone = "") {
   elements.message.textContent = text;
   elements.message.className = `message ${tone}`.trim();
+}
+
+function setActiveView(viewName) {
+  state.activeView = viewName;
+  elements.quizPanel.classList.add("hidden");
+  elements.summaryPanel.classList.add("hidden");
+  elements.viewPanels.forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.view !== viewName);
+  });
+  elements.viewButtons.forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.viewTarget === viewName));
+  });
+
+  if (viewName === "dex") renderDex();
+  if (viewName === "leaderboard") void renderLeaderboard();
+}
+
+function hideViewPanels() {
+  elements.viewPanels.forEach((panel) => panel.classList.add("hidden"));
+}
+
+function unlockDevice(access) {
+  state.deviceUnlocked = true;
+  state.deviceAccess = normalizeDeviceAccess(access);
+  writeDeviceAccess(state.deviceAccess);
+  setLockStatus(`Access granted: ${state.deviceAccess.label}.`);
+  renderAuth();
+  updateDeviceShell();
+  void ensureCatalogReady();
+  setActiveView("setup");
+}
+
+function lockDevice() {
+  const progress = state.progress ?? progressStore.getState();
+  sessionStorage.removeItem(DEVICE_ACCESS_KEY);
+  state.deviceUnlocked = false;
+  state.deviceAccess = null;
+  if (progress.user) void progressStore.signOut();
+  showSetup();
+  updateDeviceShell();
+  updateSetupPreview();
+}
+
+function updateDeviceShell() {
+  const progress = state.progress ?? progressStore.getState();
+  const unlocked = isDeviceUnlocked();
+  elements.authStatus.textContent = getAuthStatusText(progress);
+  elements.appShell.dataset.deviceLocked = String(!unlocked);
+  elements.workspace.classList.toggle("hidden", !unlocked);
+  elements.lockScreen.classList.toggle("hidden", unlocked);
+  elements.screenClock.textContent = unlocked ? "ONLINE" : "LOCKED";
+  elements.logout.classList.toggle("hidden", !unlocked);
+}
+
+function completeBoot() {
+  elements.bootStatus.textContent = "Interface ready.";
+  window.setTimeout(() => {
+    elements.bootScreen.classList.add("boot-complete");
+  }, 420);
+}
+
+function getAuthStatusText(progress) {
+  const gate = getDeviceGate(progress);
+  if (progress.user) return progress.status;
+  if (!gate.locked && state.deviceAccess) {
+    if (state.deviceAccess.type === "guest") return "Guest trainer session active.";
+    return `Registered trainer session: ${state.deviceAccess.label}.`;
+  }
+  return gate.label || progress.status;
+}
+
+function isDeviceUnlocked() {
+  return !getDeviceGate(state.progress ?? progressStore.getState()).locked;
+}
+
+function getDeviceGate(progress) {
+  return getAccessGate({
+    ...progress,
+    access: getGateAccess(progress),
+  });
+}
+
+function getGateAccess(progress) {
+  if (progress?.user?.uid) return { method: "google" };
+  if (state.deviceAccess?.type === "guest") return { method: "guest" };
+  if (state.deviceAccess?.type === "registered") return { method: "registered" };
+  return null;
+}
+
+function getCurrentTrainerIdentity(progress = state.progress ?? progressStore.getState()) {
+  if (progress.user) {
+    return {
+      uid: progress.user.uid,
+      displayName: progress.user.displayName || "Google trainer",
+      provider: "google",
+    };
+  }
+
+  if (state.deviceAccess?.type === "registered") {
+    return {
+      uid: `site:${state.deviceAccess.id}`,
+      displayName: state.deviceAccess.label,
+      provider: "site",
+    };
+  }
+
+  if (state.deviceAccess?.type === "guest") {
+    return {
+      uid: "guest",
+      displayName: "Guest",
+      provider: "guest",
+    };
+  }
+
+  return null;
+}
+
+function setLockStatus(text) {
+  elements.lockStatus.textContent = text;
 }
 
 function option(value, label) {
@@ -612,6 +855,66 @@ function escapeText(value) {
   const span = document.createElement("span");
   span.textContent = value;
   return span.innerHTML;
+}
+
+function formatMeasurements(pokemon) {
+  const meters = pokemon.height?.meters;
+  const kilograms = pokemon.weight?.kilograms;
+  if (!meters && !kilograms) return "No measurements";
+  return [
+    meters ? `${meters} m` : "",
+    kilograms ? `${kilograms} kg` : "",
+  ].filter(Boolean).join(" / ");
+}
+
+function formatAbilityList(abilities = []) {
+  if (!Array.isArray(abilities) || !abilities.length) return "No abilities";
+  return abilities
+    .slice(0, 3)
+    .map((ability) => {
+      if (typeof ability === "string") return capitalize(ability.replaceAll("-", " "));
+      return ability.displayName || capitalize(String(ability.name || "unknown").replaceAll("-", " "));
+    })
+    .join(" / ");
+}
+
+function readDeviceAccess() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(DEVICE_ACCESS_KEY) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!["guest", "registered", "local"].includes(parsed.type)) return null;
+    return normalizeDeviceAccess(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function writeDeviceAccess(access) {
+  if (access.type === "google") return;
+  try {
+    sessionStorage.setItem(DEVICE_ACCESS_KEY, JSON.stringify(access));
+  } catch {
+    // Session storage can fail in locked-down browser contexts; the live state remains usable.
+  }
+}
+
+function normalizeDeviceAccess(access) {
+  const type = access.type === "local" ? "registered" : access.type;
+  const label = String(access.label || (type === "guest" ? "Guest trainer" : "Local Trainer")).slice(0, 40);
+  return {
+    type,
+    label,
+    id: access.id || cleanIdentityId(label),
+  };
+}
+
+function cleanIdentityId(value) {
+  return String(value || "trainer")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "trainer";
 }
 
 function capitalize(value) {
