@@ -70,7 +70,6 @@ $alignedApk = Join-Path $buildRoot "aligned.apk"
 $signedApk = Join-Path $buildRoot "whos-that-pokemon.apk"
 
 New-Item -ItemType Directory -Force -Path $classesDir, $dexDir, $genDir, $compiledRes, $assetDir, $downloads, $keystoreDir | Out-Null
-Copy-Item -LiteralPath (Join-Path $root "index.html") -Destination (Join-Path $assetDir "index.html") -Force
 
 & $aapt2 compile --dir (Join-Path $srcMain "res") -o $compiledRes
 if ($LASTEXITCODE -ne 0) { throw "aapt2 compile failed." }
@@ -84,8 +83,8 @@ $flatFiles = Get-ChildItem -Path $compiledRes -Recurse -Filter "*.flat" | ForEac
     -A $assetDir `
     --min-sdk-version 23 `
     --target-sdk-version 36 `
-    --version-code 1 `
-    --version-name "1.0" `
+    --version-code 2 `
+    --version-name "2.0" `
     $flatFiles
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed." }
 

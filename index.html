@@ -3,975 +3,161 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Gen 1 Pokemon Silhouette Quiz</title>
-    <style>
-      :root {
-        --ink: #172033;
-        --muted: #5d6879;
-        --red: #d62938;
-        --red-dark: #941b2c;
-        --yellow: #f4c542;
-        --blue: #2877c9;
-        --green: #22885d;
-        --cream: #fff8e8;
-        --screen: #dcebd8;
-        --line: #111824;
-        --shadow: 0 18px 0 rgba(17, 24, 36, 0.16);
-        color: var(--ink);
-        background:
-          radial-gradient(circle at 16% 10%, rgba(244, 197, 66, 0.42), transparent 24rem),
-          radial-gradient(circle at 86% 16%, rgba(40, 119, 201, 0.22), transparent 24rem),
-          linear-gradient(145deg, #fff0d3, #f9fbff 50%, #ffe0e5);
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        min-width: 320px;
-        min-height: 100vh;
-        min-height: 100svh;
-        margin: 0;
-      }
-
-      button,
-      input {
-        font: inherit;
-      }
-
-      button,
-      .download-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 42px;
-        border: 2px solid var(--line);
-        border-radius: 8px;
-        background: #fff;
-        box-shadow: 0 4px 0 var(--line);
-        color: var(--ink);
-        cursor: pointer;
-        font-weight: 900;
-        text-decoration: none;
-      }
-
-      button:hover:not(:disabled),
-      .download-link:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 5px 0 var(--line);
-      }
-
-      button:active:not(:disabled),
-      .download-link:active {
-        transform: translateY(3px);
-        box-shadow: 0 1px 0 var(--line);
-      }
-
-      button:disabled {
-        cursor: not-allowed;
-        opacity: 0.55;
-      }
-
-      button:focus-visible,
-      input:focus-visible,
-      .download-link:focus-visible {
-        outline: 4px solid rgba(40, 119, 201, 0.28);
-        outline-offset: 3px;
-      }
-
-      .app {
-        width: min(1040px, calc(100% - 24px));
-        min-height: 100vh;
-        min-height: 100svh;
-        margin: 0 auto;
-        padding: clamp(12px, 3vw, 28px) 0;
-        display: grid;
-        place-items: center;
-      }
-
-      .pokedex {
-        width: 100%;
-        max-width: 900px;
-        overflow: hidden;
-        border: 5px solid var(--line);
-        border-radius: 14px;
-        background:
-          linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 34%),
-          var(--red);
-        box-shadow: var(--shadow);
-      }
-
-      .device-top {
-        min-height: 70px;
-        padding: 14px clamp(14px, 3vw, 24px);
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        border-bottom: 4px solid var(--line);
-        background: var(--red-dark);
-      }
-
-      .lens {
-        width: 42px;
-        height: 42px;
-        border: 4px solid #fff;
-        border-radius: 50%;
-        background:
-          radial-gradient(circle at 33% 28%, #fff 0 11%, transparent 12%),
-          radial-gradient(circle, #89e8ff 0 42%, #2d8ed6 43% 100%);
-        box-shadow: 0 0 0 3px var(--line);
-      }
-
-      .light {
-        width: 16px;
-        height: 16px;
-        border: 2px solid var(--line);
-        border-radius: 50%;
-        background: var(--yellow);
-      }
-
-      .light.green {
-        background: #57da7c;
-      }
-
-      .brand {
-        margin-left: auto;
-        color: #fff;
-        font-weight: 950;
-        text-align: right;
-        text-transform: uppercase;
-      }
-
-      .content {
-        padding: clamp(14px, 3vw, 26px);
-      }
-
-      .screen {
-        border: 5px solid var(--line);
-        border-radius: 10px;
-        background:
-          linear-gradient(rgba(255, 255, 255, 0.16) 50%, transparent 50%) 0 0 / 100% 8px,
-          radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.58), transparent 34%),
-          var(--screen);
-        box-shadow: inset 0 0 0 5px rgba(255, 255, 255, 0.35);
-      }
-
-      .setup,
-      .summary {
-        padding: clamp(22px, 5vw, 44px);
-        display: grid;
-        justify-items: center;
-        gap: 18px;
-        text-align: center;
-      }
-
-      h1,
-      h2,
-      p {
-        margin: 0;
-      }
-
-      h1 {
-        max-width: 12ch;
-        font-size: clamp(2.4rem, 8vw, 5.3rem);
-        line-height: 0.9;
-      }
-
-      h2 {
-        font-size: clamp(1.9rem, 5vw, 3.6rem);
-        line-height: 0.95;
-      }
-
-      .setup p,
-      .summary p {
-        max-width: 54ch;
-        color: #26372a;
-        font-weight: 750;
-        line-height: 1.45;
-      }
-
-      .length-grid {
-        width: min(100%, 480px);
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .length-grid button,
-      .primary,
-      .download-link {
-        padding: 12px 14px;
-      }
-
-      .length-grid button[aria-pressed="true"],
-      .primary {
-        background: var(--yellow);
-      }
-
-      .setup-actions {
-        width: min(100%, 480px);
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .download-link {
-        background: #fff;
-      }
-
-      .quiz {
-        padding: clamp(12px, 2vw, 18px);
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 260px;
-        gap: 16px;
-      }
-
-      .stage,
-      .side {
-        display: grid;
-        gap: 14px;
-        align-content: start;
-      }
-
-      .status-row {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .metric,
-      .info-card {
-        border: 3px solid var(--line);
-        border-radius: 10px;
-        background: var(--cream);
-      }
-
-      .metric {
-        padding: 10px;
-      }
-
-      .metric span {
-        display: block;
-        color: var(--muted);
-        font-size: 0.74rem;
-        font-weight: 950;
-        text-transform: uppercase;
-      }
-
-      .metric strong {
-        display: block;
-        font-size: clamp(1.25rem, 3vw, 2rem);
-        line-height: 1;
-      }
-
-      .art-panel {
-        position: relative;
-        min-height: clamp(250px, 45vw, 390px);
-        display: grid;
-        place-items: center;
-        overflow: hidden;
-        border: 3px solid var(--line);
-        border-radius: 10px;
-        background:
-          radial-gradient(circle at center, rgba(255, 255, 255, 0.78), transparent 34%),
-          repeating-radial-gradient(
-            circle at center,
-            rgba(33, 50, 37, 0.09) 0 3px,
-            transparent 3px 18px
-          ),
-          linear-gradient(180deg, #eaf5e6, #c9dec8);
-      }
-
-      .pokemon-art {
-        width: min(68%, 330px);
-        max-height: 320px;
-        object-fit: contain;
-        transform-origin: 50% 80%;
-        animation: float 2.8s ease-in-out infinite;
-      }
-
-      .pokemon-art.silhouette {
-        filter: brightness(0) saturate(100%) contrast(120%);
-      }
-
-      .pokemon-art.revealed {
-        filter: none;
-        animation: reveal 380ms ease both;
-      }
-
-      .shadow {
-        position: absolute;
-        left: 31%;
-        right: 31%;
-        bottom: 16%;
-        height: 24px;
-        border-radius: 50%;
-        background: rgba(22, 32, 51, 0.22);
-        filter: blur(2px);
-      }
-
-      .answer {
-        display: grid;
-        gap: 8px;
-      }
-
-      .answer label {
-        color: #26372a;
-        font-size: 0.85rem;
-        font-weight: 950;
-        text-transform: uppercase;
-      }
-
-      .answer-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px;
-      }
-
-      input {
-        width: 100%;
-        min-width: 0;
-        border: 3px solid var(--line);
-        border-radius: 8px;
-        padding: 10px 12px;
-        color: var(--ink);
-        background: #fff;
-        font-weight: 850;
-      }
-
-      .answer-row button,
-      .controls button {
-        padding: 8px 14px;
-      }
-
-      .message {
-        min-height: 34px;
-        color: #26372a;
-        font-weight: 900;
-      }
-
-      .message.correct {
-        color: var(--green);
-      }
-
-      .message.wrong {
-        color: var(--red-dark);
-      }
-
-      .message.reveal {
-        color: var(--blue);
-      }
-
-      .info-card {
-        padding: 14px;
-      }
-
-      .info-card h3 {
-        margin: 0 0 10px;
-        font-size: 1rem;
-      }
-
-      .small-note {
-        color: var(--muted);
-        font-size: 0.88rem;
-        font-weight: 750;
-        line-height: 1.35;
-      }
-
-      .progress-track {
-        height: 15px;
-        overflow: hidden;
-        border: 2px solid var(--line);
-        border-radius: 999px;
-        background: #fff;
-      }
-
-      .progress-fill {
-        width: 0;
-        height: 100%;
-        background: linear-gradient(90deg, var(--green), var(--blue));
-      }
-
-      .controls {
-        display: grid;
-        gap: 10px;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-
-      .native-app [data-web-only] {
-        display: none !important;
-      }
-
-      .native-app .setup-actions {
-        grid-template-columns: 1fr;
-      }
-
-      @keyframes float {
-        0%,
-        100% {
-          transform: translateY(0) scale(1);
-        }
-        50% {
-          transform: translateY(-8px) scale(1.02);
-        }
-      }
-
-      @keyframes reveal {
-        0% {
-          transform: scale(0.92);
-        }
-        70% {
-          transform: scale(1.06);
-        }
-        100% {
-          transform: scale(1);
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        *,
-        *::before,
-        *::after {
-          scroll-behavior: auto !important;
-          transition-duration: 0.01ms !important;
-          animation-duration: 0.01ms !important;
-          animation-iteration-count: 1 !important;
-        }
-      }
-
-      @media (max-width: 760px) {
-        .device-top {
-          min-height: 58px;
-        }
-
-        .brand {
-          font-size: 0.8rem;
-        }
-
-        .length-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .setup-actions {
-          grid-template-columns: 1fr;
-        }
-
-        .quiz {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      @media (max-width: 480px) {
-        .app {
-          width: calc(100% - 12px);
-          padding: 6px 0;
-        }
-
-        .content {
-          padding: 10px;
-        }
-
-        .status-row,
-        .answer-row {
-          grid-template-columns: 1fr;
-        }
-
-        .answer-row button {
-          width: 100%;
-        }
-      }
-    </style>
+    <title>Who's That Pokemon?</title>
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app">
-      <main class="pokedex" aria-live="polite">
-        <div class="device-top">
-          <div class="lens" aria-hidden="true"></div>
-          <div class="light" aria-hidden="true"></div>
-          <div class="light green" aria-hidden="true"></div>
-          <div class="brand">Gen 1 Pokedex</div>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">National Dex Quiz</p>
+          <h1>Who's That Pokemon?</h1>
         </div>
-
-        <div class="content">
-          <section id="setup-screen" class="screen setup">
-            <h1>Who's That Pokemon?</h1>
-            <p>
-              Choose a quiz length, identify the silhouette, and clear a shuffled
-              set from the original 151.
-            </p>
-            <div class="length-grid" role="group" aria-label="Quiz length">
-              <button type="button" data-length="10">10</button>
-              <button type="button" data-length="25" aria-pressed="true">25</button>
-              <button type="button" data-length="50">50</button>
-              <button type="button" data-length="151">151</button>
-            </div>
-            <div class="setup-actions">
-              <button id="start-button" class="primary" type="button">Start quiz</button>
-              <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Download APK</a>
-            </div>
-          </section>
-
-          <section id="quiz-screen" class="screen quiz hidden" aria-label="Quiz">
-            <div class="stage">
-              <div class="status-row" aria-label="Quiz status">
-                <div class="metric"><span>Progress</span><strong id="round-count">1/25</strong></div>
-                <div class="metric"><span>Score</span><strong id="score">0</strong></div>
-                <div class="metric"><span>Best</span><strong id="best-streak">0</strong></div>
-              </div>
-
-              <div class="art-panel">
-                <img id="pokemon-art" class="pokemon-art silhouette" alt="Hidden Pokemon silhouette" />
-                <div class="shadow" aria-hidden="true"></div>
-              </div>
-
-              <form id="answer-form" class="answer">
-                <label for="guess-input">Type the Pokemon name</label>
-                <div class="answer-row">
-                  <input id="guess-input" type="text" autocomplete="off" placeholder="Example: Pikachu" />
-                  <button id="guess-button" type="submit">Guess</button>
-                </div>
-              </form>
-              <p id="message" class="message" role="status">Make your guess.</p>
-            </div>
-
-            <aside class="side" aria-label="Quiz tools">
-              <div class="info-card">
-                <h3 id="answer-title">Silhouette locked</h3>
-                <p id="answer-detail" class="small-note">
-                  Correct answers reveal the artwork and advance to the next round.
-                </p>
-              </div>
-              <div class="info-card">
-                <h3>Completion</h3>
-                <div class="progress-track" aria-hidden="true"><div id="progress-fill" class="progress-fill"></div></div>
-                <p id="remaining-count" class="small-note">25 silhouettes queued.</p>
-              </div>
-              <div class="controls">
-                <button id="skip-button" type="button">Reveal / Skip</button>
-                <button id="next-button" class="hidden" type="button">Next silhouette</button>
-                <button id="restart-button" type="button">Restart</button>
-              </div>
-            </aside>
-          </section>
-
-          <section id="summary-screen" class="screen summary hidden">
-            <h2>Quiz complete</h2>
-            <p id="summary-text"></p>
-            <button id="summary-restart-button" class="primary" type="button">Play again</button>
-          </section>
+        <div class="auth-panel">
+          <span id="auth-status">Guest mode loading...</span>
+          <button id="login-button" type="button">Google Login</button>
+          <button id="logout-button" type="button" class="hidden">Logout</button>
         </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel setup-panel" aria-label="Quiz setup">
+          <div class="section-heading">
+            <h2>Quiz Setup</h2>
+            <p id="catalog-status">Loading every generation from PokeAPI...</p>
+          </div>
+
+          <div class="control-grid">
+            <label>
+              <span>Guess</span>
+              <select id="guess-mode">
+                <option value="name">Name</option>
+                <option value="type">Type</option>
+                <option value="generation">Generation</option>
+                <option value="number">Pokedex #</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Style</span>
+              <select id="answer-style">
+                <option value="input">Input best guess</option>
+                <option value="choice">Multiple choice</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Presentation</span>
+              <select id="presentation">
+                <option value="silhouette">Silhouette</option>
+                <option value="color">Colored image</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Type Filter</span>
+              <select id="type-filter">
+                <option value="all">All types</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Generation Filter</span>
+              <select id="generation-filter">
+                <option value="all">All generations</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Name or # Filter</span>
+              <input id="search-filter" type="search" placeholder="Pikachu or 25" />
+            </label>
+          </div>
+
+          <div class="length-controls" role="group" aria-label="Quiz length">
+            <button type="button" data-length="25" aria-pressed="true">25</button>
+            <button type="button" data-length="50">50</button>
+            <button type="button" data-length="150">150</button>
+            <button type="button" data-length="250">250</button>
+            <label class="custom-length">
+              <span>Custom</span>
+              <input id="custom-length" type="number" min="10" value="10" />
+            </label>
+          </div>
+
+          <div class="setup-actions">
+            <button id="start-button" class="primary" type="button" disabled>Start Quiz</button>
+            <button id="refresh-data-button" type="button">Refresh Data</button>
+            <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Download APK</a>
+          </div>
+        </section>
+
+        <section class="panel dex-panel" aria-label="Pokedex progress">
+          <div class="section-heading">
+            <h2>Pokedex</h2>
+            <p id="dex-summary">Correct guesses are tracked locally.</p>
+          </div>
+          <div class="dex-meter" aria-hidden="true">
+            <div id="dex-fill"></div>
+          </div>
+          <div id="dex-list" class="dex-list"></div>
+        </section>
+
+        <section id="quiz-panel" class="panel quiz-panel hidden" aria-label="Quiz">
+          <div class="quiz-header">
+            <div class="metric">
+              <span>Progress</span>
+              <strong id="round-count">1/25</strong>
+            </div>
+            <div class="metric">
+              <span>Score</span>
+              <strong id="score">0</strong>
+            </div>
+            <div class="metric">
+              <span>Pool</span>
+              <strong id="pool-count">0</strong>
+            </div>
+          </div>
+
+          <div class="art-panel">
+            <img id="pokemon-art" alt="Pokemon quiz prompt" />
+          </div>
+
+          <div class="prompt-row">
+            <div>
+              <p class="eyebrow">Current Challenge</p>
+              <h2 id="prompt-title">Guess the Pokemon name</h2>
+              <p id="prompt-detail">Make your best guess.</p>
+            </div>
+          </div>
+
+          <form id="answer-form" class="answer-form">
+            <label for="guess-input">Answer</label>
+            <div class="answer-row">
+              <input id="guess-input" type="text" autocomplete="off" />
+              <button id="guess-button" type="submit">Guess</button>
+            </div>
+          </form>
+
+          <div id="choice-grid" class="choice-grid hidden"></div>
+          <p id="message" class="message" role="status"></p>
+
+          <div class="quiz-actions">
+            <button id="skip-button" type="button">Reveal / Skip</button>
+            <button id="next-button" type="button" class="hidden">Next</button>
+            <button id="restart-button" type="button">New Setup</button>
+          </div>
+        </section>
+
+        <section id="summary-panel" class="panel summary-panel hidden" aria-label="Quiz summary">
+          <h2>Quiz Complete</h2>
+          <p id="summary-text"></p>
+          <button id="summary-restart-button" class="primary" type="button">Play Again</button>
+        </section>
       </main>
     </div>
 
-    <script>
-      const POKEMON = [
-        { id: 1, name: "Bulbasaur", aliases: [] },
-        { id: 2, name: "Ivysaur", aliases: [] },
-        { id: 3, name: "Venusaur", aliases: [] },
-        { id: 4, name: "Charmander", aliases: [] },
-        { id: 5, name: "Charmeleon", aliases: [] },
-        { id: 6, name: "Charizard", aliases: [] },
-        { id: 7, name: "Squirtle", aliases: [] },
-        { id: 8, name: "Wartortle", aliases: [] },
-        { id: 9, name: "Blastoise", aliases: [] },
-        { id: 10, name: "Caterpie", aliases: [] },
-        { id: 11, name: "Metapod", aliases: [] },
-        { id: 12, name: "Butterfree", aliases: [] },
-        { id: 13, name: "Weedle", aliases: [] },
-        { id: 14, name: "Kakuna", aliases: [] },
-        { id: 15, name: "Beedrill", aliases: [] },
-        { id: 16, name: "Pidgey", aliases: [] },
-        { id: 17, name: "Pidgeotto", aliases: [] },
-        { id: 18, name: "Pidgeot", aliases: [] },
-        { id: 19, name: "Rattata", aliases: [] },
-        { id: 20, name: "Raticate", aliases: [] },
-        { id: 21, name: "Spearow", aliases: [] },
-        { id: 22, name: "Fearow", aliases: [] },
-        { id: 23, name: "Ekans", aliases: [] },
-        { id: 24, name: "Arbok", aliases: [] },
-        { id: 25, name: "Pikachu", aliases: [] },
-        { id: 26, name: "Raichu", aliases: [] },
-        { id: 27, name: "Sandshrew", aliases: [] },
-        { id: 28, name: "Sandslash", aliases: [] },
-        { id: 29, name: "Nidoran♀", aliases: ["nidoran female", "nidoran f"] },
-        { id: 30, name: "Nidorina", aliases: [] },
-        { id: 31, name: "Nidoqueen", aliases: [] },
-        { id: 32, name: "Nidoran♂", aliases: ["nidoran male", "nidoran m"] },
-        { id: 33, name: "Nidorino", aliases: [] },
-        { id: 34, name: "Nidoking", aliases: [] },
-        { id: 35, name: "Clefairy", aliases: [] },
-        { id: 36, name: "Clefable", aliases: [] },
-        { id: 37, name: "Vulpix", aliases: [] },
-        { id: 38, name: "Ninetales", aliases: [] },
-        { id: 39, name: "Jigglypuff", aliases: [] },
-        { id: 40, name: "Wigglytuff", aliases: [] },
-        { id: 41, name: "Zubat", aliases: [] },
-        { id: 42, name: "Golbat", aliases: [] },
-        { id: 43, name: "Oddish", aliases: [] },
-        { id: 44, name: "Gloom", aliases: [] },
-        { id: 45, name: "Vileplume", aliases: [] },
-        { id: 46, name: "Paras", aliases: [] },
-        { id: 47, name: "Parasect", aliases: [] },
-        { id: 48, name: "Venonat", aliases: [] },
-        { id: 49, name: "Venomoth", aliases: [] },
-        { id: 50, name: "Diglett", aliases: [] },
-        { id: 51, name: "Dugtrio", aliases: [] },
-        { id: 52, name: "Meowth", aliases: [] },
-        { id: 53, name: "Persian", aliases: [] },
-        { id: 54, name: "Psyduck", aliases: [] },
-        { id: 55, name: "Golduck", aliases: [] },
-        { id: 56, name: "Mankey", aliases: [] },
-        { id: 57, name: "Primeape", aliases: [] },
-        { id: 58, name: "Growlithe", aliases: [] },
-        { id: 59, name: "Arcanine", aliases: [] },
-        { id: 60, name: "Poliwag", aliases: [] },
-        { id: 61, name: "Poliwhirl", aliases: [] },
-        { id: 62, name: "Poliwrath", aliases: [] },
-        { id: 63, name: "Abra", aliases: [] },
-        { id: 64, name: "Kadabra", aliases: [] },
-        { id: 65, name: "Alakazam", aliases: [] },
-        { id: 66, name: "Machop", aliases: [] },
-        { id: 67, name: "Machoke", aliases: [] },
-        { id: 68, name: "Machamp", aliases: [] },
-        { id: 69, name: "Bellsprout", aliases: [] },
-        { id: 70, name: "Weepinbell", aliases: [] },
-        { id: 71, name: "Victreebel", aliases: [] },
-        { id: 72, name: "Tentacool", aliases: [] },
-        { id: 73, name: "Tentacruel", aliases: [] },
-        { id: 74, name: "Geodude", aliases: [] },
-        { id: 75, name: "Graveler", aliases: [] },
-        { id: 76, name: "Golem", aliases: [] },
-        { id: 77, name: "Ponyta", aliases: [] },
-        { id: 78, name: "Rapidash", aliases: [] },
-        { id: 79, name: "Slowpoke", aliases: [] },
-        { id: 80, name: "Slowbro", aliases: [] },
-        { id: 81, name: "Magnemite", aliases: [] },
-        { id: 82, name: "Magneton", aliases: [] },
-        { id: 83, name: "Farfetch'd", aliases: ["farfetchd", "farfetch d"] },
-        { id: 84, name: "Doduo", aliases: [] },
-        { id: 85, name: "Dodrio", aliases: [] },
-        { id: 86, name: "Seel", aliases: [] },
-        { id: 87, name: "Dewgong", aliases: [] },
-        { id: 88, name: "Grimer", aliases: [] },
-        { id: 89, name: "Muk", aliases: [] },
-        { id: 90, name: "Shellder", aliases: [] },
-        { id: 91, name: "Cloyster", aliases: [] },
-        { id: 92, name: "Gastly", aliases: [] },
-        { id: 93, name: "Haunter", aliases: [] },
-        { id: 94, name: "Gengar", aliases: [] },
-        { id: 95, name: "Onix", aliases: [] },
-        { id: 96, name: "Drowzee", aliases: [] },
-        { id: 97, name: "Hypno", aliases: [] },
-        { id: 98, name: "Krabby", aliases: [] },
-        { id: 99, name: "Kingler", aliases: [] },
-        { id: 100, name: "Voltorb", aliases: [] },
-        { id: 101, name: "Electrode", aliases: [] },
-        { id: 102, name: "Exeggcute", aliases: [] },
-        { id: 103, name: "Exeggutor", aliases: [] },
-        { id: 104, name: "Cubone", aliases: [] },
-        { id: 105, name: "Marowak", aliases: [] },
-        { id: 106, name: "Hitmonlee", aliases: [] },
-        { id: 107, name: "Hitmonchan", aliases: [] },
-        { id: 108, name: "Lickitung", aliases: [] },
-        { id: 109, name: "Koffing", aliases: [] },
-        { id: 110, name: "Weezing", aliases: [] },
-        { id: 111, name: "Rhyhorn", aliases: [] },
-        { id: 112, name: "Rhydon", aliases: [] },
-        { id: 113, name: "Chansey", aliases: [] },
-        { id: 114, name: "Tangela", aliases: [] },
-        { id: 115, name: "Kangaskhan", aliases: [] },
-        { id: 116, name: "Horsea", aliases: [] },
-        { id: 117, name: "Seadra", aliases: [] },
-        { id: 118, name: "Goldeen", aliases: [] },
-        { id: 119, name: "Seaking", aliases: [] },
-        { id: 120, name: "Staryu", aliases: [] },
-        { id: 121, name: "Starmie", aliases: [] },
-        { id: 122, name: "Mr. Mime", aliases: ["mr mime", "mister mime"] },
-        { id: 123, name: "Scyther", aliases: [] },
-        { id: 124, name: "Jynx", aliases: [] },
-        { id: 125, name: "Electabuzz", aliases: [] },
-        { id: 126, name: "Magmar", aliases: [] },
-        { id: 127, name: "Pinsir", aliases: [] },
-        { id: 128, name: "Tauros", aliases: [] },
-        { id: 129, name: "Magikarp", aliases: [] },
-        { id: 130, name: "Gyarados", aliases: [] },
-        { id: 131, name: "Lapras", aliases: [] },
-        { id: 132, name: "Ditto", aliases: [] },
-        { id: 133, name: "Eevee", aliases: [] },
-        { id: 134, name: "Vaporeon", aliases: [] },
-        { id: 135, name: "Jolteon", aliases: [] },
-        { id: 136, name: "Flareon", aliases: [] },
-        { id: 137, name: "Porygon", aliases: [] },
-        { id: 138, name: "Omanyte", aliases: [] },
-        { id: 139, name: "Omastar", aliases: [] },
-        { id: 140, name: "Kabuto", aliases: [] },
-        { id: 141, name: "Kabutops", aliases: [] },
-        { id: 142, name: "Aerodactyl", aliases: [] },
-        { id: 143, name: "Snorlax", aliases: [] },
-        { id: 144, name: "Articuno", aliases: [] },
-        { id: 145, name: "Zapdos", aliases: [] },
-        { id: 146, name: "Moltres", aliases: [] },
-        { id: 147, name: "Dratini", aliases: [] },
-        { id: 148, name: "Dragonair", aliases: [] },
-        { id: 149, name: "Dragonite", aliases: [] },
-        { id: 150, name: "Mewtwo", aliases: [] },
-        { id: 151, name: "Mew", aliases: [] },
-      ];
-
-      const state = {
-        selectedLength: 25,
-        rounds: [],
-        currentIndex: 0,
-        score: 0,
-        bestStreak: 0,
-        streak: 0,
-        revealed: false,
-      };
-
-      const $ = (selector) => document.querySelector(selector);
-      if (location.href.startsWith("file:///android_asset/")) {
-        document.documentElement.classList.add("native-app");
-      }
-
-      const elements = {
-        setup: $("#setup-screen"),
-        quiz: $("#quiz-screen"),
-        summary: $("#summary-screen"),
-        start: $("#start-button"),
-        lengthButtons: [...document.querySelectorAll("[data-length]")],
-        art: $("#pokemon-art"),
-        form: $("#answer-form"),
-        input: $("#guess-input"),
-        message: $("#message"),
-        roundCount: $("#round-count"),
-        score: $("#score"),
-        bestStreak: $("#best-streak"),
-        answerTitle: $("#answer-title"),
-        answerDetail: $("#answer-detail"),
-        remaining: $("#remaining-count"),
-        progressFill: $("#progress-fill"),
-        skip: $("#skip-button"),
-        next: $("#next-button"),
-        restart: $("#restart-button"),
-        summaryText: $("#summary-text"),
-        summaryRestart: $("#summary-restart-button"),
-      };
-
-      const exactNameOwners = new Map(
-        POKEMON.map((pokemon) => [normalizeAnswer(pokemon.name), pokemon.id]),
-      );
-
-      elements.lengthButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          state.selectedLength = Number(button.dataset.length);
-          elements.lengthButtons.forEach((candidate) => {
-            candidate.setAttribute("aria-pressed", String(candidate === button));
-          });
-        });
-      });
-
-      elements.start.addEventListener("click", startQuiz);
-      elements.form.addEventListener("submit", onGuess);
-      elements.skip.addEventListener("click", revealCurrent);
-      elements.next.addEventListener("click", nextRound);
-      elements.restart.addEventListener("click", showSetup);
-      elements.summaryRestart.addEventListener("click", showSetup);
-
-      function startQuiz() {
-        state.rounds = shuffle([...POKEMON]).slice(0, state.selectedLength);
-        state.currentIndex = 0;
-        state.score = 0;
-        state.bestStreak = 0;
-        state.streak = 0;
-        state.revealed = false;
-        showOnly(elements.quiz);
-        renderRound();
-      }
-
-      function showSetup() {
-        state.revealed = false;
-        showOnly(elements.setup);
-        elements.message.textContent = "Make your guess.";
-        elements.input.value = "";
-      }
-
-      function renderRound() {
-        const pokemon = getCurrentPokemon();
-        const roundNumber = state.currentIndex + 1;
-
-        state.revealed = false;
-        elements.art.src = getSpriteUrl(pokemon.id);
-        elements.art.alt = "Hidden Pokemon silhouette";
-        elements.art.className = "pokemon-art silhouette";
-        elements.input.value = "";
-        elements.input.disabled = false;
-        elements.input.focus();
-        elements.message.className = "message";
-        elements.message.textContent = "Make your guess.";
-        elements.answerTitle.textContent = "Silhouette locked";
-        elements.answerDetail.textContent =
-          "Type a guess. Minor typos are accepted for longer names.";
-        elements.skip.disabled = false;
-        elements.next.classList.add("hidden");
-        elements.roundCount.textContent = `${roundNumber}/${state.rounds.length}`;
-        elements.score.textContent = String(state.score);
-        elements.bestStreak.textContent = String(state.bestStreak);
-        elements.remaining.textContent =
-          `${state.rounds.length - state.currentIndex} silhouettes queued.`;
-        elements.progressFill.style.width =
-          `${((roundNumber - 1) / state.rounds.length) * 100}%`;
-      }
-
-      function onGuess(event) {
-        event.preventDefault();
-        if (state.revealed) return nextRound();
-
-        const pokemon = getCurrentPokemon();
-        const value = elements.input.value;
-
-        if (!normalizeAnswer(value)) {
-          setMessage("Type a name before guessing.", "wrong");
-          return;
-        }
-
-        if (!isAnswerCorrect(value, pokemon)) {
-          setMessage(`No signal match for "${value.trim()}". Try again.`, "wrong");
-          return;
-        }
-
-        state.score += 1;
-        state.streak += 1;
-        state.bestStreak = Math.max(state.bestStreak, state.streak);
-        elements.score.textContent = String(state.score);
-        elements.bestStreak.textContent = String(state.bestStreak);
-        revealPokemon(`Correct. It's ${pokemon.name}.`, "correct");
-      }
-
-      function revealCurrent() {
-        if (state.revealed) return nextRound();
-        state.streak = 0;
-        revealPokemon(`${getCurrentPokemon().name} was the answer.`, "reveal");
-      }
-
-      function revealPokemon(message, tone) {
-        const pokemon = getCurrentPokemon();
-        state.revealed = true;
-        elements.art.alt = `${pokemon.name} revealed`;
-        elements.art.className = "pokemon-art revealed";
-        elements.input.disabled = true;
-        elements.answerTitle.textContent = pokemon.name;
-        elements.answerDetail.textContent =
-          `Pokedex #${String(pokemon.id).padStart(3, "0")}`;
-        elements.skip.disabled = true;
-        elements.next.classList.remove("hidden");
-        elements.progressFill.style.width =
-          `${((state.currentIndex + 1) / state.rounds.length) * 100}%`;
-        setMessage(message, tone);
-      }
-
-      function nextRound() {
-        if (state.currentIndex + 1 >= state.rounds.length) return finishQuiz();
-        state.currentIndex += 1;
-        renderRound();
-      }
-
-      function finishQuiz() {
-        const percent = Math.round((state.score / state.rounds.length) * 100);
-        elements.summaryText.textContent =
-          `You scored ${state.score} of ${state.rounds.length} (${percent}%). Best streak: ${state.bestStreak}.`;
-        showOnly(elements.summary);
-      }
-
-      function showOnly(screen) {
-        [elements.setup, elements.quiz, elements.summary].forEach((candidate) => {
-          candidate.classList.toggle("hidden", candidate !== screen);
-        });
-      }
-
-      function setMessage(message, tone) {
-        elements.message.textContent = message;
-        elements.message.className = `message ${tone}`;
-      }
-
-      function getCurrentPokemon() {
-        return state.rounds[state.currentIndex];
-      }
-
-      function getSpriteUrl(id) {
-        return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
-      }
-
-      function isAnswerCorrect(input, pokemon) {
-        const normalizedInput = normalizeAnswer(input);
-        const answers = [pokemon.name, ...pokemon.aliases].map(normalizeAnswer);
-
-        if (answers.includes(normalizedInput)) return true;
-
-        const exactNameOwner = exactNameOwners.get(normalizedInput);
-        if (exactNameOwner && exactNameOwner !== pokemon.id) return false;
-
-        return answers.some((answer) => {
-          const allowance = typoAllowance(answer.length);
-          return allowance > 0 && levenshtein(normalizedInput, answer) <= allowance;
-        });
-      }
-
-      function normalizeAnswer(value) {
-        return value
-          .normalize("NFKD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[♀]/g, "female")
-          .replace(/[♂]/g, "male")
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "");
-      }
-
-      function typoAllowance(length) {
-        if (length <= 3) return 0;
-        if (length <= 6) return 1;
-        return 2;
-      }
-
-      function levenshtein(left, right) {
-        const rows = left.length + 1;
-        const columns = right.length + 1;
-        const distances = Array.from({ length: rows }, () =>
-          Array.from({ length: columns }, () => 0),
-        );
-
-        for (let row = 0; row < rows; row += 1) distances[row][0] = row;
-        for (let column = 0; column < columns; column += 1) {
-          distances[0][column] = column;
-        }
-
-        for (let row = 1; row < rows; row += 1) {
-          for (let column = 1; column < columns; column += 1) {
-            const substitution = left[row - 1] === right[column - 1] ? 0 : 1;
-            distances[row][column] = Math.min(
-              distances[row - 1][column] + 1,
-              distances[row][column - 1] + 1,
-              distances[row - 1][column - 1] + substitution,
-            );
-          }
-        }
-
-        return distances[left.length][right.length];
-      }
-
-      function shuffle(values) {
-        for (let index = values.length - 1; index > 0; index -= 1) {
-          const swapIndex = Math.floor(Math.random() * (index + 1));
-          [values[index], values[swapIndex]] = [values[swapIndex], values[index]];
-        }
-        return values;
-      }
-    </script>
+    <script src="firebase-config.js"></script>
+    <script type="module" src="src/app.mjs"></script>
   </body>
 </html>
