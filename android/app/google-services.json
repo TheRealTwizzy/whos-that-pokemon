@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "481701103645-905grvojjdptmc9psj2di12g86qfddml.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.twizzy.whosthatpokemon",
+            "certificate_hash": "5cac84d61e4a0e8c684533a5606d15baf2932f8b"
+          }
+        },
+        {
           "client_id": "481701103645-jookugoreud938qap9rok5ilkiuqtfgn.apps.googleusercontent.com",
           "client_type": 3
         }

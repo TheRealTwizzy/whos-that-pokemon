@@ -320,17 +320,29 @@ export function getFixedLandscapeTransform({
   const landscapeWidth = Math.max(1, Number(shellWidth) || 0);
   const landscapeHeight = Math.max(1, Number(shellHeight) || 0);
   const normalizedRotation = normalizeQuarterTurn(rotation);
-  const longViewportSide = Math.max(usableWidth, usableHeight);
-  const shortViewportSide = Math.min(usableWidth, usableHeight);
+  const quarterRotated = Math.abs(normalizedRotation) === 90;
   const scale = Math.max(
     0.25,
-    Math.min(1, longViewportSide / landscapeWidth, shortViewportSide / landscapeHeight),
+    Math.min(
+      1,
+      usableWidth / (quarterRotated ? landscapeHeight : landscapeWidth),
+      usableHeight / (quarterRotated ? landscapeWidth : landscapeHeight),
+    ),
   );
-  const rotated = normalizedRotation !== 0;
-  const fittedWidth = (rotated ? landscapeHeight : landscapeWidth) * scale;
-  const fittedHeight = (rotated ? landscapeWidth : landscapeHeight) * scale;
+  const fittedWidth = (quarterRotated ? landscapeHeight : landscapeWidth) * scale;
+  const fittedHeight = (quarterRotated ? landscapeWidth : landscapeHeight) * scale;
   const centeredX = Math.max(0, Math.floor((usableWidth - fittedWidth) / 2) + Math.max(0, Number(safeAreaLeft) || 0));
   const centeredY = Math.max(0, Math.floor((usableHeight - fittedHeight) / 2) + Math.max(0, Number(safeAreaTop) || 0));
+
+  if (Math.abs(normalizedRotation) === 180) {
+    return {
+      rotation: 180,
+      scale: Number(scale.toFixed(4)),
+      offsetX: Math.floor(centeredX + landscapeWidth * scale),
+      offsetY: Math.floor(centeredY + landscapeHeight * scale),
+      stageHeight: height,
+    };
+  }
 
   if (normalizedRotation > 0) {
     return {
@@ -358,6 +370,21 @@ export function getFixedLandscapeTransform({
     offsetX: centeredX,
     offsetY: centeredY,
     stageHeight: height,
+  };
+}
+
+export function resolveStableLandscapeViewport({
+  viewportWidth = 0,
+  viewportHeight = 0,
+  orientationAngle = 0,
+} = {}) {
+  const width = Math.max(1, Number(viewportWidth) || 0);
+  const height = Math.max(1, Number(viewportHeight) || 0);
+  const normalizedAngle = normalizeQuarterTurn(orientationAngle);
+  return {
+    rotation: width >= height && Math.abs(normalizedAngle) === 180 ? 180 : 0,
+    shellWidth: Math.max(width, height),
+    shellHeight: Math.min(width, height),
   };
 }
 
@@ -542,7 +569,12 @@ export function getAccessGate(progress) {
   };
 }
 
-export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "", standalone = false } = {}) {
+export function getGoogleAuthEnvironmentStatus({
+  href = "",
+  userAgent = "",
+  standalone = false,
+  nativeAuthAvailable = false,
+} = {}) {
   const normalizedHref = String(href).toLowerCase();
   const normalizedUserAgent = String(userAgent).toLowerCase();
   const parsedOrigin = parseAuthOrigin(normalizedHref);
@@ -598,6 +630,15 @@ export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "", stan
     "line/",
     "twitter",
   ].some((marker) => normalizedUserAgent.includes(marker));
+
+  if (androidWebView && nativeAuthAvailable) {
+    return {
+      supported: true,
+      reason: "native-android-bridge",
+      signInFlow: "native",
+      message: "Google sign-in is available through the Android app.",
+    };
+  }
 
   if (androidWebView || iosWebView || inAppBrowser) {
     return {
@@ -895,6 +936,7 @@ function normalizeQuarterTurn(rotation) {
   const rounded = Math.round((Number(rotation) || 0) / 90) * 90;
   if (rounded === 90 || rounded === -270) return 90;
   if (rounded === -90 || rounded === 270) return -90;
+  if (Math.abs(rounded) === 180) return 180;
   return 0;
 }
 

@@ -40,9 +40,9 @@ Home Screen app path.
 - The physical PokéDex shell scales to fit the player viewport, and the emulated
   LCD surface does not scroll; long app lists can scroll inside their own
   command windows.
-- Mobile and installed-app portrait viewports auto-rotate the PokéDex display
-  to the nearest landscape angle instead of blocking play with a rotation
-  splash screen.
+- Mobile and installed-app viewports keep one upright landscape LCD composition
+  and scale it to fit, instead of changing orientation or layout when the device
+  rotates.
 - Tracks a PokéDex of correct guesses locally for guests and local Trainers,
   and in Firestore for signed-in Google players.
 - Runs the quiz as the "Who's That Pokémon?" PokéOS app.
@@ -122,20 +122,29 @@ also separated by automatic input device class so mouse/keyboard and mobile
 touch runs do not share public or personal-best categories. Category integrity is
 primarily resolved by the client setup policy before score submission.
 
-Google OAuth is blocked by Google inside embedded Android WebViews. The APK
-therefore treats Google Auth as unavailable and keeps Guest/local Trainer play
-usable. Native Android Google login is a future milestone; it should use a
-platform-supported auth flow instead of WebView OAuth.
+Mobile browser Google login uses the web app config in `firebase-config.js`.
+The hosted site must be opened from an HTTPS browser origin listed in Firebase
+Authentication authorized domains.
 
-Mobile browser Google login uses the web app config in `firebase-config.js`, not
-Android's `google-services.json`. The hosted site must be opened from an HTTPS
-browser origin listed in Firebase Authentication authorized domains.
+The Android APK uses `android/app/google-services.json`, the Google Services
+Gradle plugin, Firebase Auth, and Android Credential Manager. The WebView does
+not run Google OAuth directly. Instead, PokéOS detects `window.PokeNativeAuth`,
+Android opens the native Google account chooser, Android signs into Firebase
+with the Google credential, and the WebView receives the Google ID token through
+a JavaScript event. Web Firebase then calls `GoogleAuthProvider.credential(idToken)`
+so the existing progress, unlock, and leaderboard sync code uses the same
+Google account path as browser login.
 
-If you download `google-services.json` from Firebase, keep it with the Android
-project and move it to your development machine when a native Android auth
-bridge is added. It belongs at `android/app/google-services.json` in a
-Gradle-based Android project, but this repository's current APK script compiles
-a tiny Java WebView directly with Android SDK tools and does not read that file.
+Required Android Firebase Console setup:
+
+1. Create or confirm the Android app package `com.twizzy.whosthatpokemon`.
+2. Place the downloaded Android config at `android/app/google-services.json`.
+3. Add the debug SHA-1/SHA-256 printed by `.\tools\build-apk.ps1` for test APKs.
+4. Add the release SHA-1/SHA-256 for any release keystore used for hosted APKs.
+
+After SHA fingerprints are registered, re-download `google-services.json`. A
+native-login-ready file should include an Android OAuth client entry
+(`client_type: 1`); the APK build script warns when that entry is still missing.
 
 ## Tests
 
@@ -147,16 +156,16 @@ npm test
 
 ## Android APK
 
-The APK is a small native Android WebView wrapper that opens the public GitHub
-Pages site. It needs internet access for the app, PokéAPI data, and sprites.
-The WebView APK uses Guest or local Trainer profiles for progress today.
-Firebase/Google progress sync is available in supported browsers until native
-Android Google login is implemented as a separate milestone.
+The APK is a native Gradle Android app wrapping the public GitHub Pages site in
+a hardened WebView. It needs internet access for the app, PokéAPI data, sprites,
+Firebase Auth, and Firestore sync. Guest and local Trainer profiles remain
+available, and Google login uses the native Android Credential Manager bridge.
 
 The wrapper is locked to landscape sensor orientations and runs fullscreen so it
-does not show Android status/navigation bars during play. Google account login
-still needs the supported mobile browser path unless the Android project is
-upgraded to native Firebase/Google auth with a JavaScript bridge.
+does not show Android status/navigation bars during play. The WebView only
+injects `window.PokeNativeAuth` on the trusted GitHub Pages URL, blocks unknown
+top-level navigation, and returns tokens through JavaScript events instead of
+URLs.
 
 Build the signed APK locally with:
 
@@ -164,4 +173,7 @@ Build the signed APK locally with:
 .\tools\build-apk.ps1
 ```
 
-The script writes the downloadable file to `downloads/whos-that-pokemon.apk`.
+The script runs `:app:assembleDebug`, writes the downloadable file to
+`downloads/whos-that-pokemon.apk`, and prints the debug SHA fingerprints to add
+to Firebase. If neither `android\gradlew.bat` nor a system `gradle` is present,
+it downloads Gradle 8.13 into the ignored repo-local `.gradle\local\` cache.

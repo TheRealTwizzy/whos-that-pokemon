@@ -5,6 +5,7 @@ import {
   createProgressStore,
   createLocalTrainerStore,
   mapGoogleLoginError,
+  requestNativeGoogleIdToken,
 } from "../src/auth.mjs";
 
 function createMemoryStorage() {
@@ -190,6 +191,98 @@ test("maps disallowed Google user agents to a local-friendly retry state", () =>
   );
 });
 
+test("requests a Google ID token through the native Android bridge", async () => {
+  const restoreWindow = installWindowEventTarget();
+  const requestedIds = [];
+
+  try {
+    const nativeAuth = {
+      signIn(requestId) {
+        requestedIds.push(requestId);
+        queueMicrotask(() => {
+          window.dispatchEvent(new CustomEvent("poke-native-auth-result", {
+            detail: {
+              requestId,
+              idToken: "native-google-id-token",
+            },
+          }));
+        });
+      },
+    };
+
+    const idToken = await requestNativeGoogleIdToken(nativeAuth, { timeoutMs: 100 });
+
+    assert.equal(idToken, "native-google-id-token");
+    assert.equal(requestedIds.length, 1);
+    assert.match(requestedIds[0], /^native-auth-/);
+  } finally {
+    restoreWindow();
+  }
+});
+
+test("signs into web Firebase with the Google ID token returned by native Android", async () => {
+  const restoreWindow = installWindowEventTarget({ POKEMON_FIREBASE_CONFIG: { apiKey: "test-key" } });
+  const restoreStorage = installBrowserStorage({
+    localStorage: createMemoryStorage(),
+    sessionStorage: createMemoryStorage(),
+  });
+  const calls = [];
+  let authStateCallback = () => {};
+
+  try {
+    const nativeAuth = {
+      signIn(requestId) {
+        calls.push(["native-sign-in", requestId]);
+        queueMicrotask(() => {
+          window.dispatchEvent(new CustomEvent("poke-native-auth-result", {
+            detail: {
+              requestId,
+              idToken: "native-google-id-token",
+            },
+          }));
+        });
+      },
+      signOut() {
+        calls.push(["native-sign-out"]);
+      },
+    };
+    const firebaseLoader = createFakeFirebaseLoader({
+      onAuthStateChanged(callback) {
+        authStateCallback = callback;
+      },
+      signInWithCredential(auth, credential) {
+        calls.push(["web-sign-in", credential]);
+        queueMicrotask(() => {
+          authStateCallback({
+            uid: "firebase-user",
+            displayName: "Native Trainer",
+            photoURL: "https://example.test/trainer.png",
+          });
+        });
+        return Promise.resolve({ user: { uid: "firebase-user", displayName: "Native Trainer" } });
+      },
+    });
+    const store = createProgressStore(() => {}, {
+      firebaseLoader,
+      nativeAuth,
+    });
+
+    await store.init();
+    await store.signIn({ timeoutMs: 100 });
+
+    assert.deepEqual(calls[0], ["native-sign-in", calls[0][1]]);
+    assert.deepEqual(calls[1], ["web-sign-in", { providerId: "google.com", idToken: "native-google-id-token" }]);
+    assert.equal(store.getState().user.displayName, "Native Trainer");
+
+    await store.signOut();
+
+    assert.deepEqual(calls.at(-1), ["native-sign-out"]);
+  } finally {
+    restoreStorage();
+    restoreWindow();
+  }
+});
+
 function installBrowserStorage({ localStorage, sessionStorage }) {
   const descriptors = {
     localStorage: Object.getOwnPropertyDescriptor(globalThis, "localStorage"),
@@ -213,5 +306,85 @@ function installBrowserStorage({ localStorage, sessionStorage }) {
         delete globalThis[key];
       }
     }
+  };
+}
+
+function installWindowEventTarget(properties = {}) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const eventTarget = new EventTarget();
+  Object.assign(eventTarget, properties);
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: eventTarget,
+  });
+
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(globalThis, "window", descriptor);
+    } else {
+      delete globalThis.window;
+    }
+  };
+}
+
+function createFakeFirebaseLoader(overrides = {}) {
+  return async function fakeFirebaseLoader() {
+    const authModule = {
+      getAuth() {
+        return {};
+      },
+      GoogleAuthProvider: class GoogleAuthProvider {
+        static credential(idToken) {
+          return { providerId: "google.com", idToken };
+        }
+
+        addScope() {}
+      },
+      getRedirectResult() {
+        return Promise.resolve(null);
+      },
+      onAuthStateChanged(auth, callback) {
+        overrides.onAuthStateChanged?.(callback);
+      },
+      signInWithCredential: overrides.signInWithCredential,
+      signInWithPopup() {
+        throw new Error("Popup sign-in should not be used when native auth is available.");
+      },
+      signInWithRedirect() {
+        throw new Error("Redirect sign-in should not be used when native auth is available.");
+      },
+      signOut() {
+        return Promise.resolve();
+      },
+    };
+    const firestoreModule = {
+      getFirestore() {
+        return {};
+      },
+      doc() {
+        return {};
+      },
+      collection() {
+        return {};
+      },
+      getDoc() {
+        return Promise.resolve({ exists: () => false, data: () => ({}) });
+      },
+      getDocs() {
+        return Promise.resolve({ docs: [] });
+      },
+      setDoc() {
+        return Promise.resolve();
+      },
+      serverTimestamp() {
+        return "server-timestamp";
+      },
+    };
+
+    return [
+      { initializeApp: () => ({}) },
+      authModule,
+      firestoreModule,
+    ];
   };
 }

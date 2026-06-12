@@ -1,5 +1,5 @@
 import { createAudioController } from "./audio.mjs";
-import { createProgressStore } from "./auth.mjs";
+import { createProgressStore, getNativeAuthBridge, isNativeAuthBridgeAvailable } from "./auth.mjs";
 import {
   buildAutofillSuggestions,
   buildLeaderboardKey,
@@ -9,6 +9,7 @@ import {
   getAccessGate,
   getAvailableQuestionOptions,
   getFixedLandscapeTransform,
+  resolveStableLandscapeViewport,
   getGoogleAuthEnvironmentStatus,
   getSpriteUrl,
   isAttemptSubmission,
@@ -105,10 +106,12 @@ const elements = {
   installButtons: [...document.querySelectorAll("[data-install-app]")],
 };
 
+const nativeAuthBridge = getNativeAuthBridge();
 const googleAuthEnvironment = getGoogleAuthEnvironmentStatus({
   href: location.href,
   userAgent: navigator.userAgent,
   standalone: isStandaloneDisplayMode(),
+  nativeAuthAvailable: isNativeAuthBridgeAvailable(nativeAuthBridge),
 });
 
 function getCurrentInputDeviceClass() {
@@ -191,6 +194,7 @@ const progressStore = createProgressStore(
   {
     googleAuthSupported: googleAuthEnvironment.supported,
     googleAuthUnsupportedMessage: googleAuthEnvironment.message,
+    nativeAuth: nativeAuthBridge,
   },
 );
 
@@ -1578,18 +1582,22 @@ function fitDeviceToViewport() {
   elements.appShell.style.setProperty("--device-rotation", `${rotation}deg`);
 
   if (state.lcdOnlyMode) {
-    const shellWidth = Math.max(viewport.width, viewport.height);
-    const shellHeight = Math.min(viewport.width, viewport.height);
+    const landscapeViewport = resolveStableLandscapeViewport({
+      viewportWidth: viewport.width,
+      viewportHeight: viewport.height,
+      orientationAngle: getViewportOrientationAngle(),
+    });
     const transform = getFixedLandscapeTransform({
       viewportWidth: viewport.width,
       viewportHeight: viewport.height,
-      rotation,
-      shellWidth,
-      shellHeight,
+      rotation: landscapeViewport.rotation,
+      shellWidth: landscapeViewport.shellWidth,
+      shellHeight: landscapeViewport.shellHeight,
       ...safeArea,
     });
-    elements.appShell.style.setProperty("--lcd-shell-width", `${shellWidth}px`);
-    elements.appShell.style.setProperty("--lcd-shell-height", `${shellHeight}px`);
+    elements.appShell.style.setProperty("--device-rotation", `${landscapeViewport.rotation}deg`);
+    elements.appShell.style.setProperty("--lcd-shell-width", `${landscapeViewport.shellWidth}px`);
+    elements.appShell.style.setProperty("--lcd-shell-height", `${landscapeViewport.shellHeight}px`);
     elements.appShell.style.setProperty("--device-scale", String(transform.scale));
     elements.appShell.style.setProperty("--device-offset-x", `${transform.offsetX}px`);
     elements.appShell.style.setProperty("--device-offset-y", `${transform.offsetY}px`);
@@ -1631,9 +1639,11 @@ function scheduleFitDeviceToViewport() {
 
 function getShellRotation(viewport = getViewportSize()) {
   if (!shouldUseFixedLandscapeRotation(viewport)) return 0;
-  if (viewport.height <= viewport.width) return 0;
-  const angle = getViewportOrientationAngle();
-  return angle === 180 || angle === 270 ? -90 : 90;
+  return resolveStableLandscapeViewport({
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
+    orientationAngle: getViewportOrientationAngle(),
+  }).rotation;
 }
 
 function shouldUseFixedLandscapeRotation(viewport = getViewportSize()) {

@@ -8,6 +8,9 @@ const ACTIVE_LOCAL_TRAINER_KEY = "pokemonQuiz.activeLocalTrainer.v1";
 const LOCAL_TRAINER_PROGRESS_PREFIX = "pokemonQuiz.localTrainerProgress.v1.";
 const LOCAL_TRAINER_PERSONAL_SCORES_PREFIX = "pokemonQuiz.localTrainerPersonalScores.v1.";
 const LOCAL_TRAINER_PREFERENCES_PREFIX = "pokemonQuiz.localTrainerPreferences.v1.";
+const NATIVE_AUTH_RESULT_EVENT = "poke-native-auth-result";
+
+let nativeAuthRequestCounter = 0;
 
 export function createLocalTrainerStore(storage) {
   return {
@@ -121,15 +124,93 @@ export function mapGoogleLoginError(error) {
     };
   }
 
+  if (code === "auth/native-login-cancelled") {
+    return {
+      status: "Google login was cancelled. Guest and local Trainer profiles are still available.",
+      redirectAllowed: false,
+    };
+  }
+
+  if (code === "auth/native-login-unavailable") {
+    return {
+      status: "Android Google login is unavailable. Use Guest or a local Trainer ID here, or try again in Chrome.",
+      redirectAllowed: false,
+    };
+  }
+
   return {
     status: `Google login failed: ${error?.message ?? "Unknown error"}`,
     redirectAllowed: false,
   };
 }
 
+export function getNativeAuthBridge() {
+  return globalThis.window?.PokeNativeAuth ?? null;
+}
+
+export function isNativeAuthBridgeAvailable(nativeAuth = getNativeAuthBridge()) {
+  return Boolean(nativeAuth && typeof nativeAuth.signIn === "function");
+}
+
+export function requestNativeGoogleIdToken(nativeAuth = getNativeAuthBridge(), options = {}) {
+  const eventTarget = globalThis.window;
+  const timeoutMs = options.timeoutMs ?? 30000;
+
+  if (!isNativeAuthBridgeAvailable(nativeAuth) || !eventTarget?.addEventListener) {
+    const error = new Error("Native Android Google login bridge is unavailable.");
+    error.code = "auth/native-login-unavailable";
+    return Promise.reject(error);
+  }
+
+  const requestId = `native-auth-${Date.now()}-${++nativeAuthRequestCounter}`;
+
+  return new Promise((resolve, reject) => {
+    let timeoutId = 0;
+    const cleanup = () => {
+      eventTarget.removeEventListener(NATIVE_AUTH_RESULT_EVENT, onResult);
+      if (timeoutId) globalThis.clearTimeout(timeoutId);
+    };
+    const rejectWith = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onResult = (event) => {
+      const detail = event?.detail ?? {};
+      if (detail.requestId !== requestId) return;
+
+      if (detail.idToken) {
+        cleanup();
+        resolve(detail.idToken);
+        return;
+      }
+
+      const error = new Error(detail.message || "Native Android Google login failed.");
+      error.code = detail.code || "auth/native-login-failed";
+      rejectWith(error);
+    };
+
+    eventTarget.addEventListener(NATIVE_AUTH_RESULT_EVENT, onResult);
+    if (timeoutMs > 0) {
+      timeoutId = globalThis.setTimeout(() => {
+        const error = new Error("Native Android Google login timed out.");
+        error.code = "auth/popup-timeout";
+        rejectWith(error);
+      }, timeoutMs);
+    }
+
+    try {
+      nativeAuth.signIn(requestId);
+    } catch (error) {
+      error.code = error.code || "auth/native-login-unavailable";
+      rejectWith(error);
+    }
+  });
+}
+
 export function createProgressStore(onChange = () => {}, options = {}) {
   const localTrainerStore = createLocalTrainerStore(localStorage);
   const activeLocalTrainer = readActiveLocalTrainer(localTrainerStore);
+  const firebaseLoader = options.firebaseLoader ?? loadFirebaseModules;
   const state = {
     authReady: false,
     authAvailable: false,
@@ -151,6 +232,10 @@ export function createProgressStore(onChange = () => {}, options = {}) {
 
   let firebase = null;
 
+  function getConfiguredNativeAuth() {
+    return options.nativeAuth ?? getNativeAuthBridge();
+  }
+
   function emit() {
     onChange(getState());
   }
@@ -167,7 +252,8 @@ export function createProgressStore(onChange = () => {}, options = {}) {
   }
 
   async function init() {
-    if (options.googleAuthSupported === false) {
+    const nativeAuthAvailable = isNativeAuthBridgeAvailable(getConfiguredNativeAuth());
+    if (options.googleAuthSupported === false && !nativeAuthAvailable) {
       state.authReady = true;
       state.authAvailable = false;
       state.status = options.googleAuthUnsupportedMessage ||
@@ -186,11 +272,7 @@ export function createProgressStore(onChange = () => {}, options = {}) {
     }
 
     try {
-      const [{ initializeApp }, authModule, firestoreModule] = await Promise.all([
-        import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-app.js`),
-        import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-auth.js`),
-        import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore.js`),
-      ]);
+      const [{ initializeApp }, authModule, firestoreModule] = await firebaseLoader(FIREBASE_VERSION);
 
       const app = initializeApp(config);
       const auth = authModule.getAuth(app);
@@ -202,7 +284,9 @@ export function createProgressStore(onChange = () => {}, options = {}) {
       firebase = { auth, db, provider, authModule, firestoreModule };
       state.authReady = true;
       state.authAvailable = true;
-      state.status = "Google login is available.";
+      state.status = nativeAuthAvailable
+        ? "Google login is available through the Android app."
+        : "Google login is available.";
       emit();
       await authModule.getRedirectResult(auth).catch((error) => {
         state.status = mapGoogleLoginError(error).status;
@@ -246,8 +330,29 @@ export function createProgressStore(onChange = () => {}, options = {}) {
 
     try {
       state.authPending = true;
-      state.status = "Opening Google login...";
+      state.status = isNativeAuthBridgeAvailable(getConfiguredNativeAuth())
+        ? "Opening Android Google login..."
+        : "Opening Google login...";
       emit();
+
+      if (isNativeAuthBridgeAvailable(getConfiguredNativeAuth())) {
+        const idToken = await requestNativeGoogleIdToken(getConfiguredNativeAuth(), {
+          timeoutMs: options.timeoutMs ?? 30000,
+        });
+        const credential = firebase.authModule.GoogleAuthProvider.credential(idToken);
+        const result = await firebase.authModule.signInWithCredential(firebase.auth, credential);
+        state.authPending = false;
+        if (result?.user) {
+          state.user = normalizeGoogleUser(result.user);
+          state.localTrainer = null;
+          writeActiveLocalTrainerId(null);
+          state.status = `Signed in as ${state.user.displayName}.`;
+        } else {
+          state.status = "Google login complete.";
+        }
+        emit();
+        return;
+      }
 
       if (options.signInFlow === "redirect") {
         await firebase.authModule.signInWithRedirect(firebase.auth, firebase.provider).catch((redirectError) => {
@@ -292,16 +397,25 @@ export function createProgressStore(onChange = () => {}, options = {}) {
   }
 
   async function signOut() {
-    if (!firebase) return;
-    await firebase.authModule.signOut(firebase.auth);
+    const tasks = [];
+    if (firebase) {
+      tasks.push(firebase.authModule.signOut(firebase.auth));
+    }
+
+    const nativeAuth = getConfiguredNativeAuth();
+    if (nativeAuth && typeof nativeAuth.signOut === "function") {
+      tasks.push(Promise.resolve().then(() => nativeAuth.signOut()));
+    }
+
+    if (tasks.length) await Promise.allSettled(tasks);
   }
 
   async function closeActiveSessionAfterRejectedQuiz(
     message = "Run closed. Session locked.",
   ) {
     state.authPending = false;
-    if (state.user && firebase) {
-      await firebase.authModule.signOut(firebase.auth).catch(() => {});
+    if (state.user) {
+      await signOut().catch(() => {});
     }
 
     state.user = null;
@@ -541,6 +655,14 @@ export function createProgressStore(onChange = () => {}, options = {}) {
     clearLocalTrainer,
     updateTrainerPreferences,
   };
+}
+
+function loadFirebaseModules(version = FIREBASE_VERSION) {
+  return Promise.all([
+    import(`https://www.gstatic.com/firebasejs/${version}/firebase-app.js`),
+    import(`https://www.gstatic.com/firebasejs/${version}/firebase-auth.js`),
+    import(`https://www.gstatic.com/firebasejs/${version}/firebase-firestore.js`),
+  ]);
 }
 
 function normalizeGoogleUser(user) {

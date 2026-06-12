@@ -56,8 +56,9 @@ test("site exposes an installable mobile web app manifest", () => {
   assert.equal(manifestJson.icons.some((icon) => icon.src === "icons/pokedex-icon.svg"), true);
 });
 
-test("mobile portrait uses auto-rotation instead of an orientation gate", () => {
+test("mobile portrait uses stable landscape fitting instead of an orientation gate", () => {
   assert.equal(appJs.includes("getFixedLandscapeTransform"), true);
+  assert.equal(appJs.includes("resolveStableLandscapeViewport"), true);
   assert.equal(appJs.includes("getShellRotation"), true);
   assert.equal(appJs.includes("function shouldUseFixedLandscapeRotation"), true);
   assert.equal(appJs.includes("function isMobileAppViewport"), true);

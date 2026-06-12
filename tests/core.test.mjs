@@ -8,6 +8,7 @@ import {
   buildQuizPool,
   detectInputDeviceClass,
   getFixedLandscapeTransform,
+  resolveStableLandscapeViewport,
   getAccessGate,
   getAvailableQuestionOptions,
   getGoogleAuthEnvironmentStatus,
@@ -456,6 +457,19 @@ test("detects embedded WebView environments that cannot run Google OAuth", () =>
     getGoogleAuthEnvironmentStatus({
       href: "https://therealtwizzy.github.io/whos-that-pokemon/",
       userAgent: webViewUserAgent,
+      nativeAuthAvailable: true,
+    }),
+    {
+      supported: true,
+      reason: "native-android-bridge",
+      signInFlow: "native",
+      message: "Google sign-in is available through the Android app.",
+    },
+  );
+  assert.deepEqual(
+    getGoogleAuthEnvironmentStatus({
+      href: "https://therealtwizzy.github.io/whos-that-pokemon/",
+      userAgent: webViewUserAgent,
     }),
     {
       supported: false,
@@ -551,13 +565,46 @@ test("detects embedded WebView environments that cannot run Google OAuth", () =>
   );
 });
 
-test("keeps mobile shell scale stable while rotating a fixed landscape UI", () => {
+test("keeps mobile LCD-only layout upright and stable across device rotation", () => {
+  const portraitViewport = resolveStableLandscapeViewport({
+    viewportWidth: 390,
+    viewportHeight: 844,
+    orientationAngle: 90,
+  });
+  const landscapeViewport = resolveStableLandscapeViewport({
+    viewportWidth: 844,
+    viewportHeight: 390,
+    orientationAngle: 90,
+  });
+  assert.deepEqual(portraitViewport, {
+    rotation: 0,
+    shellWidth: 844,
+    shellHeight: 390,
+  });
+  assert.deepEqual(landscapeViewport, portraitViewport);
+  assert.equal(
+    resolveStableLandscapeViewport({
+      viewportWidth: 390,
+      viewportHeight: 844,
+      orientationAngle: 180,
+    }).rotation,
+    0,
+  );
+  assert.equal(
+    resolveStableLandscapeViewport({
+      viewportWidth: 844,
+      viewportHeight: 390,
+      orientationAngle: 180,
+    }).rotation,
+    180,
+  );
+
   const shell = { shellWidth: 1180, shellHeight: 740 };
   const portrait = getFixedLandscapeTransform({
     ...shell,
     viewportWidth: 390,
     viewportHeight: 844,
-    rotation: 90,
+    rotation: 0,
   });
   const landscape = getFixedLandscapeTransform({
     ...shell,
@@ -566,15 +613,26 @@ test("keeps mobile shell scale stable while rotating a fixed landscape UI", () =
     rotation: 0,
   });
 
-  assert.equal(portrait.rotation, 90);
+  assert.equal(portrait.rotation, 0);
   assert.equal(landscape.rotation, 0);
-  assert.equal(portrait.scale, landscape.scale);
+  assert.equal(portrait.scale < landscape.scale, true);
   assert.equal(portrait.stageHeight, 844);
   assert.equal(landscape.stageHeight, 390);
-  assert.equal(portrait.offsetX > 0, true);
+  assert.equal(portrait.offsetX >= 0, true);
   assert.equal(portrait.offsetY >= 0, true);
   assert.equal(landscape.offsetX >= 0, true);
   assert.equal(landscape.offsetY >= 0, true);
+
+  const flippedLandscape = getFixedLandscapeTransform({
+    ...shell,
+    viewportWidth: 844,
+    viewportHeight: 390,
+    rotation: 180,
+  });
+  assert.equal(flippedLandscape.rotation, 180);
+  assert.equal(flippedLandscape.scale, landscape.scale);
+  assert.equal(flippedLandscape.offsetX > landscape.offsetX, true);
+  assert.equal(flippedLandscape.offsetY > landscape.offsetY, true);
 });
 
 test("normalizes structured Pokedex data into a quiz catalog with log entries", () => {
