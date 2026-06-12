@@ -1,4 +1,5 @@
-const CACHE_NAME = "pokedex-trainer-os-v1";
+const CACHE_PREFIX = "pokedex-trainer-os-";
+const CACHE_NAME = `${CACHE_PREFIX}v4`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -22,11 +23,16 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
-    ),
+    caches.keys().then(async (keys) => {
+      const oldAppCaches = keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME);
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      await self.clients.claim();
+      if (!oldAppCaches.length) return;
+
+      const clients = await self.clients.matchAll({ type: "window" });
+      await Promise.all(clients.map((client) => client.navigate(client.url).catch(() => null)));
+    }),
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {

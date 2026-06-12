@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const stylesCss = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appJs = readFileSync(new URL("../src/app.mjs", import.meta.url), "utf8");
+const serviceWorkerJs = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
 const manifestJson = JSON.parse(readFileSync(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
 const androidManifest = readFileSync(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
 const androidMainActivity = readFileSync(
@@ -73,6 +74,14 @@ test("site exposes an installable mobile web app manifest", () => {
   assert.deepEqual(manifestJson.display_override, ["fullscreen", "standalone"]);
   assert.equal(manifestJson.orientation, "landscape");
   assert.equal(manifestJson.icons.some((icon) => icon.src === "icons/pokedex-icon.svg"), true);
+});
+
+test("service worker cache version refreshes deployed PokeOS clients", () => {
+  assert.equal(serviceWorkerJs.includes('const CACHE_PREFIX = "pokedex-trainer-os-";'), true);
+  assert.equal(serviceWorkerJs.includes("const CACHE_NAME = `${CACHE_PREFIX}v4`;"), true);
+  assert.equal(serviceWorkerJs.includes("key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME"), true);
+  assert.equal(serviceWorkerJs.includes('self.clients.matchAll({ type: "window" })'), true);
+  assert.equal(serviceWorkerJs.includes("client.navigate(client.url)"), true);
 });
 
 test("mobile portrait uses stable landscape fitting instead of an orientation gate", () => {
