@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { extname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
 
 const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const stylesCss = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
@@ -12,6 +16,7 @@ const androidMainActivity = readFileSync(
   new URL("../android/app/src/main/java/com/twizzy/whosthatpokemon/MainActivity.java", import.meta.url),
   "utf8",
 );
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 test("PokeDex shell does not render emulated hardware controls or stylus UI", () => {
   assert.equal(indexHtml.includes("data-hardware-action"), false);
@@ -45,6 +50,10 @@ test("PokeOS contains account, install, fullscreen, and rights surfaces", () => 
   assert.equal(indexHtml.includes('data-lcd-fullscreen'), true);
   assert.equal(indexHtml.includes('data-install-app'), true);
   assert.equal(indexHtml.includes("downloads/whos-that-pokemon.apk"), true);
+  assert.equal(indexHtml.includes('id="version-status"'), true);
+  assert.equal(indexHtml.includes('id="settings-version-status"'), true);
+  assert.equal(indexHtml.includes('download="whos-that-pokemon-v6.0.apk"'), true);
+  assert.equal(indexHtml.includes('id="apk-reinstall-version"'), true);
   assert.equal(indexHtml.includes('id="apk-reinstall-prompt"'), true);
   assert.equal(indexHtml.includes("uninstall the old APK"), true);
   assert.equal(indexHtml.includes("App not installed"), true);
@@ -82,7 +91,7 @@ test("site exposes an installable mobile web app manifest", () => {
 
 test("service worker cache version refreshes deployed PokeOS clients", () => {
   assert.equal(serviceWorkerJs.includes('const CACHE_PREFIX = "pokedex-trainer-os-";'), true);
-  assert.equal(serviceWorkerJs.includes("const CACHE_NAME = `${CACHE_PREFIX}v5`;"), true);
+  assert.equal(serviceWorkerJs.includes("const CACHE_NAME = `${CACHE_PREFIX}v6`;"), true);
   assert.equal(serviceWorkerJs.includes("key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME"), true);
   assert.equal(serviceWorkerJs.includes('self.clients.matchAll({ type: "window" })'), true);
   assert.equal(serviceWorkerJs.includes("client.navigate(client.url)"), true);
@@ -95,12 +104,58 @@ test("web app blocks outdated native Android wrappers before login", () => {
   assert.equal(appJs.includes("nativeUpdateGate"), true);
   assert.equal(appJs.includes("Android app update required"), true);
   assert.equal(appJs.includes("downloads/whos-that-pokemon.apk"), true);
+  assert.equal(appJs.includes("whos-that-pokemon-v6.0.apk"), true);
+  assert.equal(appJs.includes("renderVersionStatus"), true);
+  assert.equal(appJs.includes("Client APK"), true);
+  assert.equal(appJs.includes("Latest APK"), true);
   assert.equal(appJs.includes("isNativeWrapperUpdateRequired"), true);
   assert.equal(appJs.includes("showApkReinstallPrompt"), true);
   assert.equal(appJs.includes("startApkDownload"), true);
   assert.equal(appJs.includes("pendingApkDownloadUrl"), true);
+  assert.equal(appJs.includes("pendingApkDownloadName"), true);
+  assert.equal(stylesCss.includes(".version-status"), true);
   assert.equal(stylesCss.includes(".apk-reinstall-prompt"), true);
   assert.equal(stylesCss.includes(".apk-reinstall-card"), true);
+});
+
+test("APK download flow shows current/latest versions and saves a versioned file name", async () => {
+  const server = await startStaticServer();
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 932, height: 430 } });
+  const page = await context.newPage();
+
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/index.html`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelector("#version-status")?.textContent.includes("Latest APK v6.0"));
+
+    const linkState = await page.evaluate(() => {
+      const link = document.querySelector(".download-link");
+      return {
+        href: link.getAttribute("href"),
+        download: link.getAttribute("download"),
+        versionText: document.querySelector("#version-status").textContent.trim(),
+      };
+    });
+
+    assert.equal(linkState.href, "downloads/whos-that-pokemon.apk");
+    assert.equal(linkState.download, "whos-that-pokemon-v6.0.apk");
+    assert.equal(linkState.versionText, "Client Web v6.0 (6) | Latest APK v6.0 (6)");
+
+    await page.click(".download-link");
+    await page.waitForSelector("#apk-reinstall-prompt:not(.hidden)");
+    assert.equal(
+      await page.locator("#apk-reinstall-version").textContent(),
+      "Latest APK v6.0 (6) | File: whos-that-pokemon-v6.0.apk",
+    );
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.click("#apk-reinstall-confirm");
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), "whos-that-pokemon-v6.0.apk");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
 });
 
 test("mobile portrait uses stable landscape fitting instead of an orientation gate", () => {
@@ -123,6 +178,46 @@ test("mobile portrait uses stable landscape fitting instead of an orientation ga
   assert.equal(stylesCss.includes("overscroll-behavior: none"), true);
   assert.equal(stylesCss.includes("@media (orientation: landscape) and (max-height: 620px)"), false);
 });
+
+function startStaticServer() {
+  const contentTypes = new Map([
+    [".html", "text/html; charset=utf-8"],
+    [".js", "text/javascript; charset=utf-8"],
+    [".mjs", "text/javascript; charset=utf-8"],
+    [".css", "text/css; charset=utf-8"],
+    [".json", "application/json; charset=utf-8"],
+    [".webmanifest", "application/manifest+json; charset=utf-8"],
+    [".svg", "image/svg+xml"],
+    [".apk", "application/vnd.android.package-archive"],
+  ]);
+
+  const server = createServer((request, response) => {
+    const rawPath = new URL(request.url, "http://127.0.0.1").pathname;
+    const safePath = normalize(decodeURIComponent(rawPath)).replace(/^([/\\])+/, "");
+    const filePath = join(root, safePath || "index.html");
+
+    if (!filePath.startsWith(root) || !existsSync(filePath) || statSync(filePath).isDirectory()) {
+      response.writeHead(404);
+      response.end("not found");
+      return;
+    }
+
+    response.writeHead(200, { "Content-Type": contentTypes.get(extname(filePath)) || "application/octet-stream" });
+    createReadStream(filePath).pipe(response);
+  });
+
+  return new Promise((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      resolve({
+        port: server.address().port,
+        close: () => new Promise((closeResolve, closeReject) => {
+          server.close((error) => error ? closeReject(error) : closeResolve());
+        }),
+      });
+    });
+  });
+}
 
 test("Android wrapper uses fullscreen landscape app chrome", () => {
   assert.equal(androidManifest.includes('android:screenOrientation="sensorLandscape"'), true);

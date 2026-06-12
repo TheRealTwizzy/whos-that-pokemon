@@ -230,6 +230,17 @@ p {
   line-height: 1.45;
 }
 
+.apk-reinstall-card .apk-reinstall-version {
+  margin-top: 10px;
+  border: 3px solid var(--line);
+  padding: 8px 10px;
+  background: #f8ffe9;
+  color: var(--shell-dark);
+  font-size: clamp(0.78rem, 2.5vw, 0.92rem);
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .apk-reinstall-card button {
   width: 100%;
   margin-top: 18px;
@@ -713,7 +724,7 @@ html.lcd-only-mode .lock-screen {
   text-transform: uppercase;
 }
 
-.lock-copy p:last-child,
+#lock-status,
 .mission-card p,
 .section-heading p,
 .prompt-row p,
@@ -722,6 +733,25 @@ html.lcd-only-mode .lock-screen {
   color: #26362c;
   font-weight: 850;
   line-height: 1.4;
+}
+
+.version-status {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  border: 3px solid var(--line);
+  padding: 5px 8px;
+  background: #edf6cd;
+  color: #26372a;
+  font-size: clamp(0.68rem, 1.15vw, 0.8rem);
+  font-weight: 950;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.version-status.version-warning {
+  background: #ffe28f;
+  color: var(--shell-dark);
 }
 
 .login-actions,

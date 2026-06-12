@@ -9,9 +9,11 @@ Set-StrictMode -Version Latest
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $androidRoot = Join-Path $root "android"
 $downloads = Join-Path $root "downloads"
-$finalApk = Join-Path $downloads "whos-that-pokemon.apk"
+$stableApkFileName = "whos-that-pokemon.apk"
+$stableApk = Join-Path $downloads $stableApkFileName
 $updateManifestPath = Join-Path $root "android-update.json"
-$publicApkUrl = "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk"
+$publicDownloadsUrl = "https://therealtwizzy.github.io/whos-that-pokemon/downloads"
+$stablePublicApkUrl = "$publicDownloadsUrl/$stableApkFileName"
 $gradleVersion = "8.13"
 $releaseSigningFile = Join-Path $androidRoot "release-signing.properties"
 $releaseSigningProperties = @{}
@@ -56,6 +58,16 @@ function Get-AndroidAppVersion {
         VersionCode = [int] $versionCodeMatch.Groups[1].Value
         VersionName = $versionNameMatch.Groups[1].Value
     }
+}
+
+function Get-VersionedApkFileName {
+    param([string] $VersionName)
+
+    $safeVersionName = ($VersionName -replace "[^A-Za-z0-9._-]", "-").Trim("-")
+    if ([string]::IsNullOrWhiteSpace($safeVersionName)) {
+        throw "Could not build versioned APK file name from versionName."
+    }
+    return "whos-that-pokemon-v$safeVersionName.apk"
 }
 
 $androidHome = $env:ANDROID_HOME
@@ -175,22 +187,28 @@ if (-not (Test-Path $builtApk)) {
 }
 
 if ($Variant -eq "Release") {
-    Copy-Item -LiteralPath $builtApk -Destination $finalApk -Force
     $appVersion = Get-AndroidAppVersion
-    $apkSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $finalApk).Hash.ToLowerInvariant()
+    $versionedApkFileName = Get-VersionedApkFileName $appVersion.VersionName
+
+    Copy-Item -LiteralPath $builtApk -Destination $stableApk -Force
+    $apkSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $stableApk).Hash.ToLowerInvariant()
     $updateManifest = [ordered]@{
         packageName = "com.twizzy.whosthatpokemon"
         versionCode = $appVersion.VersionCode
         versionName = $appVersion.VersionName
         minimumVersionCode = $appVersion.VersionCode
         required = $true
-        apkUrl = $publicApkUrl
+        apkUrl = $stablePublicApkUrl
+        apkFileName = $versionedApkFileName
+        stableApkUrl = $stablePublicApkUrl
+        stableApkFileName = $stableApkFileName
         sha256 = $apkSha256
     }
-    $updateManifestJson = ($updateManifest | ConvertTo-Json -Depth 3) + [Environment]::NewLine
+    $updateManifestJson = (($updateManifest | ConvertTo-Json -Depth 3) -replace "`r`n", "`n").TrimEnd() + "`n"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($updateManifestPath, $updateManifestJson, $utf8NoBom)
-    Write-Host "Built release APK: $finalApk"
+    Write-Host "Built release APK: $stableApk"
+    Write-Host "Browser download file name: $versionedApkFileName"
     Write-Host "Updated Android updater manifest: $updateManifestPath"
 } else {
     Write-Host "Built local debug APK: $builtApk"

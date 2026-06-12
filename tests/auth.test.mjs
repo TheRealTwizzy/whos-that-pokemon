@@ -298,9 +298,9 @@ test("reads native Android wrapper version metadata from the bridge", () => {
 
 test("blocks legacy native Android wrappers before login while leaving browsers alone", () => {
   const updateManifest = {
-    versionCode: 5,
-    versionName: "5.0",
-    minimumVersionCode: 5,
+    versionCode: 6,
+    versionName: "6.0",
+    minimumVersionCode: 6,
     required: true,
     apkUrl: "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
     sha256: "a".repeat(64),
@@ -315,9 +315,9 @@ test("blocks legacy native Android wrappers before login while leaving browsers 
       required: true,
       currentVersionCode: 0,
       currentVersionName: "",
-      latestVersionCode: 5,
-      latestVersionName: "5.0",
-      minimumVersionCode: 5,
+      latestVersionCode: 6,
+      latestVersionName: "6.0",
+      minimumVersionCode: 6,
       apkUrl: "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
       sha256: "a".repeat(64),
       reason: "native-wrapper-outdated",
@@ -339,9 +339,9 @@ test("blocks old Android WebView wrappers that do not expose a native bridge", (
     nativeAuth: null,
     nativeWrapperDetected: true,
     updateManifest: {
-      versionCode: 5,
-      versionName: "5.0",
-      minimumVersionCode: 5,
+      versionCode: 6,
+      versionName: "6.0",
+      minimumVersionCode: 6,
       required: true,
       apkUrl: "downloads/whos-that-pokemon.apk",
       sha256: "",

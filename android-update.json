@@ -1,9 +1,12 @@
 {
     "packageName":  "com.twizzy.whosthatpokemon",
-    "versionCode":  5,
-    "versionName":  "5.0",
-    "minimumVersionCode":  5,
+    "versionCode":  6,
+    "versionName":  "6.0",
+    "minimumVersionCode":  6,
     "required":  true,
     "apkUrl":  "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
-    "sha256":  "0d4afb428bcba698ca989df2ed0392733ccbdd0c3fbee6e4d0281e24bc35e1df"
+    "apkFileName":  "whos-that-pokemon-v6.0.apk",
+    "stableApkUrl":  "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
+    "stableApkFileName":  "whos-that-pokemon.apk",
+    "sha256":  "3b69f9968b0c25174ecd35373b7cdbd1dd2a37f2cd4dc79811af3a2fd4032bdb"
 }

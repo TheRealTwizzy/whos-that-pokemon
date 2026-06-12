@@ -51,29 +51,31 @@ test("Android APK build script publishes release artifacts and keeps debug local
   assert.match(script, /release-signing\.properties/);
   assert.match(script, /Debug builds do not overwrite/);
   assert.match(script, /if \(\$Variant -eq "Release"\)/);
-  assert.match(script, /Copy-Item -LiteralPath \$builtApk -Destination \$finalApk -Force/);
+  assert.match(script, /Copy-Item -LiteralPath \$builtApk -Destination \$stableApk -Force/);
 });
 
 test("Android updater manifest publishes the required release APK metadata", () => {
   const manifest = readJson("android-update.json");
 
   assert.equal(manifest.packageName, "com.twizzy.whosthatpokemon");
-  assert.equal(manifest.versionCode, 5);
-  assert.equal(manifest.versionName, "5.0");
-  assert.equal(manifest.minimumVersionCode, 5);
+  assert.equal(manifest.versionCode, 6);
+  assert.equal(manifest.versionName, "6.0");
+  assert.equal(manifest.minimumVersionCode, 6);
   assert.equal(manifest.required, true);
   assert.equal(
     manifest.apkUrl,
     "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
   );
+  assert.equal(manifest.apkFileName, "whos-that-pokemon-v6.0.apk");
+  assert.equal(manifest.stableApkFileName, "whos-that-pokemon.apk");
   assert.match(manifest.sha256, /^[a-f0-9]{64}$/);
 });
 
 test("Android release build is versioned for the first boot-up updater client", () => {
   const appGradle = readText("android/app/build.gradle");
 
-  assert.match(appGradle, /versionCode\s*=\s*5/);
-  assert.match(appGradle, /versionName\s*=\s*['"]5\.0['"]/);
+  assert.match(appGradle, /versionCode\s*=\s*6/);
+  assert.match(appGradle, /versionName\s*=\s*['"]6\.0['"]/);
   assert.match(appGradle, /buildConfig\s*=\s*true/);
 });
 
@@ -124,7 +126,10 @@ test("Android build script refreshes the update manifest from the signed release
   assert.match(script, /android-update\.json/);
   assert.match(script, /Get-FileHash -Algorithm SHA256/);
   assert.match(script, /minimumVersionCode/);
-  assert.match(script, /https:\/\/therealtwizzy\.github\.io\/whos-that-pokemon\/downloads\/whos-that-pokemon\.apk/);
+  assert.match(script, /https:\/\/therealtwizzy\.github\.io\/whos-that-pokemon\/downloads/);
+  assert.match(script, /\$stablePublicApkUrl = "\$publicDownloadsUrl\/\$stableApkFileName"/);
+  assert.match(script, /whos-that-pokemon-v\$safeVersionName\.apk/);
+  assert.match(script, /Browser download file name/);
 });
 
 function readText(relativePath) {

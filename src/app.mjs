@@ -2,6 +2,7 @@ import { createAudioController } from "./audio.mjs";
 import {
   createProgressStore,
   getNativeAuthBridge,
+  getNativeWrapperVersionInfo,
   getNativeWrapperUpdateGate,
   isNativeAuthBridgeAvailable,
   MIN_NATIVE_WRAPPER_VERSION_CODE,
@@ -31,8 +32,11 @@ import { loadPokemonCatalog } from "./pokemon-api.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const DEVICE_ACCESS_KEY = "pokemonQuiz.deviceAccess.v1";
+const POKE_OS_VERSION_CODE = 6;
+const POKE_OS_VERSION_NAME = "6.0";
 const ANDROID_UPDATE_MANIFEST_URL = "android-update.json";
 const ANDROID_APK_URL = "downloads/whos-that-pokemon.apk";
+const VERSIONED_ANDROID_APK_FILE_NAME = "whos-that-pokemon-v6.0.apk";
 const QUIZ_EXIT_CONFIRM_MS = 5000;
 const ART_TOGGLE_HOLD_MS = 420;
 const POKE_KEYBOARD_ROWS = [
@@ -60,6 +64,7 @@ const elements = {
   screenClock: $("#screen-clock"),
   lockScreen: $("#device-lock-screen"),
   lockStatus: $("#lock-status"),
+  versionStatus: $("#version-status"),
   workspace: $("#device-workspace"),
   osSplash: $("#os-splash"),
   osSplashTitle: $("#os-splash-title"),
@@ -77,6 +82,7 @@ const elements = {
   logout: $("#logout-button"),
   catalogStatus: $("#catalog-status"),
   settingsStatus: $("#settings-status"),
+  settingsVersionStatus: $("#settings-version-status"),
   trainerAvatar: $("#trainer-avatar"),
   deviceTheme: $("#device-theme"),
   soundEnabled: $("#sound-enabled"),
@@ -122,6 +128,7 @@ const elements = {
   downloadLinks: [...document.querySelectorAll(".download-link")],
   apkReinstallPrompt: $("#apk-reinstall-prompt"),
   apkReinstallConfirm: $("#apk-reinstall-confirm"),
+  apkReinstallVersion: $("#apk-reinstall-version"),
 };
 
 const nativeAuthBridge = getNativeAuthBridge();
@@ -175,7 +182,14 @@ const state = {
   bootComplete: false,
   lcdOnlyMode: shouldStartInLcdOnlyMode(),
   nativeUpdateGate: null,
+  latestVersionInfo: {
+    versionCode: POKE_OS_VERSION_CODE,
+    versionName: POKE_OS_VERSION_NAME,
+    apkUrl: ANDROID_APK_URL,
+    apkFileName: VERSIONED_ANDROID_APK_FILE_NAME,
+  },
   pendingApkDownloadUrl: "",
+  pendingApkDownloadName: "",
   quizArtworkSource: "pixel",
   artToggleTimerId: 0,
   pokeKeyboardVisible: false,
@@ -401,13 +415,15 @@ function bindEvents() {
 async function init() {
   elements.soundEnabled.checked = state.soundEnabled;
   registerServiceWorker();
-  state.nativeUpdateGate = await resolveNativeWrapperUpdateGate();
+  state.latestVersionInfo = await loadAndroidUpdateManifest();
+  state.nativeUpdateGate = resolveNativeWrapperUpdateGate(state.latestVersionInfo);
   updateNativeUpdateLinks();
+  renderVersionStatus();
   renderAuth();
   setLcdOnlyMode(state.lcdOnlyMode);
   updateDeviceShell();
   if (isNativeWrapperUpdateRequired()) {
-    showApkReinstallPrompt(state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL);
+    showApkReinstallPrompt(getLatestApkUrl(), getLatestApkFileName());
     completeBoot();
     return;
   }
@@ -417,11 +433,10 @@ async function init() {
   completeBoot();
 }
 
-async function resolveNativeWrapperUpdateGate() {
+function resolveNativeWrapperUpdateGate(updateManifest) {
   const nativeWrapperDetected = isNativeWrapperClient();
   if (!nativeWrapperDetected) return null;
 
-  const updateManifest = await loadAndroidUpdateManifest();
   const gate = getNativeWrapperUpdateGate({
     nativeAuth: nativeAuthBridge,
     nativeWrapperDetected,
@@ -452,21 +467,77 @@ async function loadAndroidUpdateManifest() {
     return await response.json();
   } catch {
     return {
-      versionCode: MIN_NATIVE_WRAPPER_VERSION_CODE,
-      versionName: `${MIN_NATIVE_WRAPPER_VERSION_CODE}.0`,
+      versionCode: POKE_OS_VERSION_CODE,
+      versionName: POKE_OS_VERSION_NAME,
       minimumVersionCode: MIN_NATIVE_WRAPPER_VERSION_CODE,
       required: true,
       apkUrl: ANDROID_APK_URL,
+      apkFileName: VERSIONED_ANDROID_APK_FILE_NAME,
       sha256: "",
     };
   }
 }
 
 function updateNativeUpdateLinks() {
-  const apkUrl = state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL;
+  const apkUrl = getLatestApkUrl();
+  const apkFileName = getLatestApkFileName();
   elements.downloadLinks.forEach((link) => {
     link.href = apkUrl;
+    link.download = apkFileName;
+    link.title = `Download ${apkFileName}`;
   });
+}
+
+function renderVersionStatus() {
+  const latest = state.latestVersionInfo || {};
+  const nativeVersion = getNativeWrapperVersionInfo(nativeAuthBridge);
+  const latestVersionName = latest.versionName || POKE_OS_VERSION_NAME;
+  const latestVersionCode = Number(latest.versionCode) || POKE_OS_VERSION_CODE;
+  const currentVersionName = nativeVersion?.versionName || POKE_OS_VERSION_NAME;
+  const currentVersionCode = nativeVersion?.versionCode || POKE_OS_VERSION_CODE;
+  const currentLabel = nativeVersion
+    ? `Client APK v${currentVersionName} (${currentVersionCode})`
+    : isNativeWrapperClient()
+      ? "Client APK old"
+      : `Client Web v${POKE_OS_VERSION_NAME} (${POKE_OS_VERSION_CODE})`;
+  const latestLabel = `Latest APK v${latestVersionName} (${latestVersionCode})`;
+  const needsUpdate = Boolean(nativeVersion && currentVersionCode < latestVersionCode);
+  const text = `${currentLabel} | ${latestLabel}`;
+
+  [elements.versionStatus, elements.settingsVersionStatus].forEach((element) => {
+    if (!element) return;
+    element.textContent = text;
+    element.classList.toggle("version-warning", needsUpdate || isNativeWrapperUpdateRequired());
+  });
+
+  if (elements.apkReinstallVersion) {
+    elements.apkReinstallVersion.textContent = `${latestLabel} | File: ${getLatestApkFileName()}`;
+  }
+}
+
+function getLatestApkUrl() {
+  const latest = state.latestVersionInfo || {};
+  return getBrowserApkUrl(String(latest.apkUrl || ANDROID_APK_URL));
+}
+
+function getLatestApkFileName() {
+  const latest = state.latestVersionInfo || {};
+  return String(latest.apkFileName || VERSIONED_ANDROID_APK_FILE_NAME);
+}
+
+function getBrowserApkUrl(apkUrl) {
+  try {
+    const parsed = new URL(apkUrl, location.href);
+    if (
+      parsed.hostname === "therealtwizzy.github.io" &&
+      parsed.pathname === "/whos-that-pokemon/downloads/whos-that-pokemon.apk"
+    ) {
+      return ANDROID_APK_URL;
+    }
+  } catch {
+    return ANDROID_APK_URL;
+  }
+  return apkUrl || ANDROID_APK_URL;
 }
 
 async function initCatalog({ forceRefresh = false } = {}) {
@@ -2117,7 +2188,8 @@ function isNativeWrapperUpdateRequired() {
 function getNativeWrapperUpdateMessage() {
   const gate = state.nativeUpdateGate;
   const latestVersion = gate?.latestVersionName || gate?.latestVersionCode || "latest";
-  return `Android app update required. Tap Android APK to download version ${latestVersion} before login.`;
+  const currentVersion = gate?.currentVersionName || gate?.currentVersionCode || "old";
+  return `Android app update required. Current APK ${currentVersion}. Latest APK ${latestVersion}. Tap Android APK before login.`;
 }
 
 function rejectIfNativeWrapperUpdateRequired() {
@@ -2125,7 +2197,7 @@ function rejectIfNativeWrapperUpdateRequired() {
   playCue("deny");
   pulseWorkspace("screen-error");
   setLockStatus(getNativeWrapperUpdateMessage());
-  showApkReinstallPrompt(state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL);
+  showApkReinstallPrompt(getLatestApkUrl(), getLatestApkFileName());
   return true;
 }
 
@@ -2133,11 +2205,13 @@ function onAndroidApkDownloadClick(event) {
   event.preventDefault();
   event.stopPropagation();
   const link = event.currentTarget;
-  showApkReinstallPrompt(link?.href || ANDROID_APK_URL);
+  showApkReinstallPrompt(link?.href || getLatestApkUrl(), link?.download || getLatestApkFileName());
 }
 
-function showApkReinstallPrompt(apkUrl = ANDROID_APK_URL) {
+function showApkReinstallPrompt(apkUrl = getLatestApkUrl(), apkFileName = getLatestApkFileName()) {
   state.pendingApkDownloadUrl = apkUrl;
+  state.pendingApkDownloadName = apkFileName;
+  renderVersionStatus();
   if (!elements.apkReinstallPrompt) return;
   elements.apkReinstallPrompt.classList.remove("hidden");
   elements.apkReinstallPrompt.setAttribute("aria-hidden", "false");
@@ -2149,17 +2223,19 @@ function showApkReinstallPrompt(apkUrl = ANDROID_APK_URL) {
 function confirmApkReinstallPrompt(event) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
-  const apkUrl = state.pendingApkDownloadUrl || ANDROID_APK_URL;
+  const apkUrl = state.pendingApkDownloadUrl || getLatestApkUrl();
+  const apkFileName = state.pendingApkDownloadName || getLatestApkFileName();
   state.pendingApkDownloadUrl = "";
+  state.pendingApkDownloadName = "";
   elements.apkReinstallPrompt?.classList.add("hidden");
   elements.apkReinstallPrompt?.setAttribute("aria-hidden", "true");
-  startApkDownload(apkUrl);
+  startApkDownload(apkUrl, apkFileName);
 }
 
-function startApkDownload(apkUrl) {
+function startApkDownload(apkUrl, apkFileName = getLatestApkFileName()) {
   const link = document.createElement("a");
   link.href = apkUrl;
-  link.download = "whos-that-pokemon.apk";
+  link.download = apkFileName;
   link.rel = "noopener";
   document.body.append(link);
   link.click();
@@ -2196,7 +2272,7 @@ function updateLcdFullscreenButtons() {
 async function installMobileApp() {
   if (isNativeWrapperUpdateRequired()) {
     setInstallStatus(getNativeWrapperUpdateMessage());
-    showApkReinstallPrompt(state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL);
+    showApkReinstallPrompt(getLatestApkUrl(), getLatestApkFileName());
     return;
   }
 

@@ -66,6 +66,7 @@
               <p class="eyebrow">PokéOS Login</p>
               <h2>Choose File</h2>
               <p id="lock-status">Guest access, local account, or Google account accepted.</p>
+              <p id="version-status" class="version-status">PokeOS v6.0 | Latest APK checking...</p>
             </div>
             <div class="login-actions">
               <button id="guest-button" class="primary" type="button">Guest</button>
@@ -73,7 +74,7 @@
               <button id="login-button" type="button">Google</button>
               <button type="button" data-lcd-fullscreen>LCD Full</button>
               <button type="button" data-install-app>Install App</button>
-              <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Android APK</a>
+              <a class="download-link" href="downloads/whos-that-pokemon.apk" download="whos-that-pokemon-v6.0.apk" data-web-only>Android APK</a>
             </div>
             <div id="trainer-profile-list" class="trainer-profile-list" aria-label="Local Trainer profiles"></div>
             <form id="register-form" class="register-form hidden">
@@ -170,7 +171,7 @@
                 <div class="setup-actions">
                   <button id="start-button" class="primary" type="button" disabled>Start Quiz</button>
                   <button id="refresh-data-button" type="button">Refresh Data</button>
-                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Android APK</a>
+                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download="whos-that-pokemon-v6.0.apk" data-web-only>Android APK</a>
                 </div>
               </section>
 
@@ -179,6 +180,7 @@
                   <p class="eyebrow">Device Option</p>
                   <h2>Option</h2>
                   <p id="settings-status">Configure trainer identity and the PokéDex shell.</p>
+                  <p id="settings-version-status" class="version-status">PokeOS v6.0 | Latest APK checking...</p>
                 </div>
 
                 <div class="trainer-preferences">
@@ -210,7 +212,7 @@
 
                   <button id="save-preferences-button" type="button">Save Current Defaults</button>
                   <button type="button" data-install-app>Install App</button>
-                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Android APK</a>
+                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download="whos-that-pokemon-v6.0.apk" data-web-only>Android APK</a>
                 </div>
                 <p class="rights-notice">
                   ©2026 Pokémon. ©1995-2026 Nintendo/Creatures Inc./GAME FREAK inc.
@@ -314,6 +316,7 @@
         Remember to uninstall the old APK to prevent PokeOS version-mismatch.
         If Android says App not installed, remove the old app first, then redownload and reinstall the latest APK from this site.
       </p>
+      <p id="apk-reinstall-version" class="apk-reinstall-version">Latest APK: v6.0</p>
       <button id="apk-reinstall-confirm" type="button">Download Latest APK</button>
     </div>
   </div>

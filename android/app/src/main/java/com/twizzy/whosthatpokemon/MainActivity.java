@@ -77,7 +77,6 @@ public class MainActivity extends Activity {
     private static final String NATIVE_AUTH_EVENT = "poke-native-auth-result";
     private static final String NATIVE_SIGN_OUT_EVENT = "poke-native-signout-result";
     private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
-    private static final String UPDATE_APK_NAME = "whos-that-pokemon-update.apk";
     private static final String EXPECTED_RELEASE_CERT_SHA256 = "11b887d0063a66446a2fafa1cd21902ec5ddd56315d78f33741754743aed53d0";
     private static final int NETWORK_TIMEOUT_MS = 15000;
     private static final int INSTALL_UPDATE_REQUEST_CODE = 5005;
@@ -313,7 +312,12 @@ public class MainActivity extends Activity {
     private void showRequiredUpdate(UpdateInfo updateInfo) {
         updateRequired = true;
         pendingUpdate = updateInfo;
-        setUpdateStatus("Android app update required. Downloading version " + updateInfo.versionName + "...");
+        setUpdateStatus(
+            "Android app update required.\n" +
+            "Current APK: v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")\n" +
+            "Latest APK: v" + updateInfo.versionName + " (" + updateInfo.versionCode + ")\n" +
+            "Downloading update..."
+        );
         configureUpdateAction("Downloading...", false, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -327,7 +331,7 @@ public class MainActivity extends Activity {
         if (updateExecutor == null) return;
 
         pendingUpdate = updateInfo;
-        setUpdateStatus("Downloading update APK...");
+        setUpdateStatus("Downloading APK v" + updateInfo.versionName + "...");
         configureUpdateAction("Downloading...", false, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -380,7 +384,7 @@ public class MainActivity extends Activity {
     private void showUpdateDownloadFailure(Exception error) {
         updateRequired = true;
         String versionName = pendingUpdate != null ? pendingUpdate.versionName : "latest";
-        setUpdateStatus("Could not install version " + versionName + ".\n" + cleanErrorMessage(error));
+        setUpdateStatus("Could not install APK v" + versionName + ".\n" + cleanErrorMessage(error));
         configureUpdateAction("Retry Update", true, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -444,7 +448,8 @@ public class MainActivity extends Activity {
         updateRequired = true;
         setUpdateStatus(
             "If Android says App not installed, uninstall the old APK first. " +
-            "Then redownload and reinstall the latest APK from the site to prevent PokeOS version-mismatch."
+            "Then redownload and reinstall the latest APK from the site to prevent PokeOS version-mismatch. " +
+            "Current APK: v" + BuildConfig.VERSION_NAME + "."
         );
         configureUpdateAction("Open App Settings", true, new View.OnClickListener() {
             @Override
@@ -532,7 +537,7 @@ public class MainActivity extends Activity {
         if (!updateDir.exists() && !updateDir.mkdirs()) {
             throw new IOException("Could not create update cache.");
         }
-        File apkFile = new File(updateDir, UPDATE_APK_NAME);
+        File apkFile = new File(updateDir, getUpdateApkFileName(updateInfo));
         if (apkFile.exists() && !apkFile.delete()) {
             throw new IOException("Could not replace stale update APK.");
         }
@@ -662,6 +667,14 @@ public class MainActivity extends Activity {
         String message = error != null ? error.getMessage() : "";
         if (message == null || message.trim().isEmpty()) return "Unknown update error.";
         return message.trim();
+    }
+
+    private static String getUpdateApkFileName(UpdateInfo updateInfo) {
+        String cleanVersionName = updateInfo.versionName.replaceAll("[^A-Za-z0-9._-]", "-");
+        if (cleanVersionName.length() == 0) {
+            cleanVersionName = String.valueOf(updateInfo.versionCode);
+        }
+        return "whos-that-pokemon-v" + cleanVersionName + ".apk";
     }
 
     private void updateNativeBridgeForUrl(String url) {
