@@ -21,10 +21,10 @@ Home Screen app path.
   Active account/session details live inside PokéOS.
 - PokéOS uses nostalgic Pokémon Red/Blue/Yellow-style menu boxes, cursor
   navigation, low-color LCD panels, and hard-bordered command lists.
-- The PokéDex body is visual shell hardware, not emulated D-pad, button, stylus,
-  or keyboard controls. Players use the LCD controls directly with touch or
-  mouse, and the device keyboard is used for text input and accessibility
-  shortcuts without adding extra UI.
+- The PokéDex body is visual shell hardware, not emulated D-pad, button, or
+  stylus controls. Typed quiz rounds use a compact PokéOS keyboard on touch
+  phones so landscape play does not depend on the native OS keyboard; hardware
+  keyboards still map directly to the same answer input.
 - LCD Pokémon prompts and log thumbnails prefer pixel sprite URLs, with modern
   artwork retained only as a fallback when a sprite is unavailable.
 - PokéOS maps the local Red/Blue SFX library to boot/login, menu movement,
@@ -139,7 +139,7 @@ Required Android Firebase Console setup:
 
 1. Create or confirm the Android app package `com.twizzy.whosthatpokemon`.
 2. Place the downloaded Android config at `android/app/google-services.json`.
-3. Add the debug SHA-1/SHA-256 printed by `.\tools\build-apk.ps1` for test APKs.
+3. Add the debug SHA-1/SHA-256 printed by `.\tools\build-apk.ps1 -Variant Debug` for test APKs.
 4. Add the release SHA-1/SHA-256 for any release keystore used for hosted APKs.
 
 After SHA fingerprints are registered, re-download `google-services.json`. A
@@ -167,13 +167,43 @@ injects `window.PokeNativeAuth` on the trusted GitHub Pages URL, blocks unknown
 top-level navigation, and returns tokens through JavaScript events instead of
 URLs.
 
-Build the signed APK locally with:
+Build the hosted signed APK locally with:
 
 ```powershell
 .\tools\build-apk.ps1
 ```
 
-The script runs `:app:assembleDebug`, writes the downloadable file to
-`downloads/whos-that-pokemon.apk`, and prints the debug SHA fingerprints to add
-to Firebase. If neither `android\gradlew.bat` nor a system `gradle` is present,
-it downloads Gradle 8.13 into the ignored repo-local `.gradle\local\` cache.
+The default `Release` variant runs `:app:assembleRelease` and writes only a
+signed release artifact to `downloads/whos-that-pokemon.apk`. Release signing is
+required before that public APK can be published. Provide signing values through
+environment variables:
+
+```powershell
+$env:WTP_RELEASE_STORE_FILE="release-upload.jks"
+$env:WTP_RELEASE_STORE_PASSWORD="..."
+$env:WTP_RELEASE_KEY_ALIAS="..."
+$env:WTP_RELEASE_KEY_PASSWORD="..."
+.\tools\build-apk.ps1
+```
+
+Or create ignored `android\release-signing.properties`:
+
+```properties
+wtp.release.storeFile=release-upload.jks
+wtp.release.storePassword=...
+wtp.release.keyAlias=...
+wtp.release.keyPassword=...
+```
+
+Use local debug APKs only for sideload testing:
+
+```powershell
+.\tools\build-apk.ps1 -Variant Debug
+```
+
+Debug builds stay under `android\app\build\outputs\apk\debug\` and do not
+overwrite `downloads/whos-that-pokemon.apk`. The script prints debug SHA
+fingerprints for Firebase test setup. Register the release keystore SHA-1 and
+SHA-256 separately, then re-download `android/app/google-services.json`. If
+neither `android\gradlew.bat` nor a system `gradle` is present, the script
+downloads Gradle 8.13 into the ignored repo-local `.gradle\local\` cache.

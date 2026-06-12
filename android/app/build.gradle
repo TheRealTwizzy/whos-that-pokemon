@@ -3,6 +3,58 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def releaseSigningProperties = new Properties()
+def releaseSigningFile = rootProject.file('release-signing.properties')
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { releaseSigningProperties.load(it) }
+}
+
+def signingValue = { List<String> names ->
+    for (String name : names) {
+        def envValue = System.getenv(name)
+        if (envValue != null && envValue.toString().trim()) return envValue.toString().trim()
+
+        def projectValue = project.findProperty(name)
+        if (projectValue != null && projectValue.toString().trim()) return projectValue.toString().trim()
+
+        def fileValue = releaseSigningProperties.getProperty(name)
+        if (fileValue != null && fileValue.toString().trim()) return fileValue.toString().trim()
+    }
+    return ''
+}
+
+def releaseStoreFilePath = signingValue([
+    'WTP_RELEASE_STORE_FILE',
+    'wtp.release.storeFile',
+    'POKE_RELEASE_STORE_FILE',
+    'ANDROID_KEYSTORE_PATH',
+])
+def releaseStorePassword = signingValue([
+    'WTP_RELEASE_STORE_PASSWORD',
+    'wtp.release.storePassword',
+    'POKE_RELEASE_STORE_PASSWORD',
+    'ANDROID_KEYSTORE_PASSWORD',
+])
+def releaseKeyAlias = signingValue([
+    'WTP_RELEASE_KEY_ALIAS',
+    'wtp.release.keyAlias',
+    'POKE_RELEASE_KEY_ALIAS',
+    'ANDROID_KEY_ALIAS',
+])
+def releaseKeyPassword = signingValue([
+    'WTP_RELEASE_KEY_PASSWORD',
+    'wtp.release.keyPassword',
+    'POKE_RELEASE_KEY_PASSWORD',
+    'ANDROID_KEY_PASSWORD',
+])
+def releaseSigningReady = releaseStoreFilePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (taskGraph.hasTask(':app:assembleRelease') && !releaseSigningReady) {
+        throw new GradleException('Release signing is required for :app:assembleRelease. Set WTP_RELEASE_STORE_FILE, WTP_RELEASE_STORE_PASSWORD, WTP_RELEASE_KEY_ALIAS, and WTP_RELEASE_KEY_PASSWORD, or create ignored android/release-signing.properties.')
+    }
+}
+
 android {
     namespace = 'com.twizzy.whosthatpokemon'
     compileSdk = 36
@@ -13,6 +65,27 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = '4.0'
+    }
+
+    signingConfigs {
+        if (releaseSigningReady) {
+            release {
+                storeFile = rootProject.file(releaseStoreFilePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+            shrinkResources = false
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.release
+            }
+        }
     }
 
     compileOptions {

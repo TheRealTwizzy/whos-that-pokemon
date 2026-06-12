@@ -27,6 +27,12 @@ const $ = (selector) => document.querySelector(selector);
 const DEVICE_ACCESS_KEY = "pokemonQuiz.deviceAccess.v1";
 const QUIZ_EXIT_CONFIRM_MS = 5000;
 const ART_TOGGLE_HOLD_MS = 420;
+const POKE_KEYBOARD_ROWS = [
+  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+  ["Z", "X", "C", "V", "B", "N", "M"],
+  ["SPACE", "-", "'", ".", "BACK", "CLEAR", "ENTER"],
+];
 
 if (location.href.startsWith("file:///android_asset/")) {
   document.documentElement.classList.add("native-app");
@@ -94,6 +100,7 @@ const elements = {
   input: $("#guess-input"),
   guessButton: $("#guess-button"),
   autofillList: $("#autofill-list"),
+  pokeKeyboard: $("#poke-keyboard"),
   choiceGrid: $("#choice-grid"),
   message: $("#message"),
   next: $("#next-button"),
@@ -158,6 +165,8 @@ const state = {
   lcdOnlyMode: shouldStartInLcdOnlyMode(),
   quizArtworkSource: "pixel",
   artToggleTimerId: 0,
+  pokeKeyboardVisible: false,
+  dexRowsDirty: true,
 };
 
 let leaderboardRequestId = 0;
@@ -187,9 +196,11 @@ const OS_APP_LABELS = {
 const progressStore = createProgressStore(
   (progress) => {
     state.progress = progress;
+    state.dexRowsDirty = true;
     renderAuth();
     if (isDeviceUnlocked()) void ensureCatalogReady();
-    renderDex();
+    renderDexSummary();
+    renderDexRowsIfVisible();
   },
   {
     googleAuthSupported: googleAuthEnvironment.supported,
@@ -202,6 +213,7 @@ bindEvents();
 await init();
 
 function bindEvents() {
+  renderPokeKeyboard();
   document.addEventListener("pointerdown", primeAudio, { once: true });
   document.addEventListener("keydown", primeAudio, { once: true });
   elements.guest.addEventListener("click", () => {
@@ -257,7 +269,7 @@ function bindEvents() {
   });
   elements.logout.addEventListener("click", () => {
     playCue("lock");
-    lockDevice();
+    void lockDevice();
   });
   elements.lcdFullscreenButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -441,6 +453,7 @@ function updateSetupPreview() {
   }
 
   state.pool = getFilteredPool();
+  state.dexRowsDirty = true;
   syncQuestionOptions(state.pool.length);
   syncLeaderboardToggle();
   state.currentSettings = getQuizSettings(state.pool.length);
@@ -449,7 +462,8 @@ function updateSetupPreview() {
   elements.catalogStatus.textContent =
     `${state.pool.length} Pokémon available for this setup.`;
   elements.setupPreview.textContent = getSetupPreviewText(state.currentSettings);
-  renderDex();
+  renderDexSummary();
+  renderDexRowsIfVisible();
   void renderLeaderboard();
 }
 
@@ -481,6 +495,7 @@ function applyQuizDefaults(defaults) {
   elements.setupTimed.checked = Boolean(defaults.timed);
   elements.setupLeaderboard.checked = Boolean(defaults.leaderboard);
   state.pool = getFilteredPool();
+  state.dexRowsDirty = true;
   syncQuestionOptions(state.pool.length, defaults.questions);
   syncLeaderboardToggle();
 }
@@ -663,6 +678,7 @@ function showOsMenu() {
   elements.summaryPanel.classList.add("hidden");
   elements.message.textContent = "";
   elements.autofillList.replaceChildren();
+  setPokeKeyboardVisible(false);
   renderTimer();
   setActiveView("menu", { focusMenu: true });
   updateOsMenuButton();
@@ -688,6 +704,8 @@ function renderRound() {
   elements.input.value = "";
   elements.input.disabled = false;
   elements.guessButton.disabled = false;
+  elements.input.readOnly = false;
+  elements.input.removeAttribute("inputmode");
   elements.next.classList.add("hidden");
   elements.autofillList.replaceChildren();
   elements.message.textContent = "";
@@ -695,12 +713,21 @@ function renderRound() {
   updateOsMenuButton();
 
   if (state.currentSettings.answerStyle === "choice") {
+    setPokeKeyboardVisible(false);
     renderChoices();
   } else {
     elements.form.classList.remove("hidden");
     elements.choiceGrid.classList.add("hidden");
     elements.input.placeholder = "Example: Pikachu";
-    elements.input.focus();
+    const showKeyboard = shouldUsePokeKeyboard();
+    setPokeKeyboardVisible(showKeyboard);
+    if (showKeyboard) {
+      elements.input.readOnly = true;
+      elements.input.setAttribute("inputmode", "none");
+      elements.input.blur();
+    } else {
+      elements.input.focus();
+    }
   }
 }
 
@@ -715,6 +742,7 @@ function renderChoices() {
   });
 
   elements.form.classList.add("hidden");
+  setPokeKeyboardVisible(false);
   elements.choiceGrid.classList.remove("hidden");
   elements.choiceGrid.replaceChildren(
     ...state.choices.map((choice) => {
@@ -754,6 +782,109 @@ function renderAutofillSuggestions() {
       return button;
     }),
   );
+}
+
+function renderPokeKeyboard() {
+  if (!elements.pokeKeyboard) return;
+  elements.pokeKeyboard.replaceChildren(
+    ...POKE_KEYBOARD_ROWS.map((row) => {
+      const rowElement = document.createElement("div");
+      rowElement.className = "poke-keyboard-row";
+      rowElement.replaceChildren(
+        ...row.map((key) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.pokeKey = key;
+          button.textContent = getPokeKeyboardLabel(key);
+          button.setAttribute("aria-label", getPokeKeyboardAriaLabel(key));
+          if (["SPACE", "BACK", "CLEAR", "ENTER"].includes(key)) {
+            button.classList.add("wide-key");
+          }
+          button.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            onPokeKeyboardKey(key, button);
+          });
+          button.addEventListener("click", (event) => {
+            event.preventDefault();
+            if (!globalThis.PointerEvent || event.detail === 0) onPokeKeyboardKey(key, button);
+          });
+          return button;
+        }),
+      );
+      return rowElement;
+    }),
+  );
+}
+
+function setPokeKeyboardVisible(visible) {
+  state.pokeKeyboardVisible = Boolean(visible);
+  elements.pokeKeyboard?.classList.toggle("hidden", !state.pokeKeyboardVisible);
+  elements.form.classList.toggle("poke-keyboard-active", state.pokeKeyboardVisible);
+  elements.quizPanel.classList.toggle("poke-keyboard-active", state.pokeKeyboardVisible);
+}
+
+function shouldUsePokeKeyboard() {
+  return getCurrentInputDeviceClass() === "touch";
+}
+
+function onPokeKeyboardKey(key, button) {
+  if (!canUsePokeKeyboard()) return;
+  playCue(key === "ENTER" ? "confirm" : "menu");
+  pulseElement(button, "button-pulse");
+  applyPokeKeyboardKey(key);
+}
+
+function applyPokeKeyboardKey(key) {
+  if (!canUsePokeKeyboard()) return false;
+  if (key === "ENTER") {
+    if (elements.form.requestSubmit) {
+      elements.form.requestSubmit(elements.guessButton);
+    } else {
+      elements.guessButton.click();
+    }
+    return true;
+  }
+
+  if (key === "BACK") {
+    elements.input.value = elements.input.value.slice(0, -1);
+  } else if (key === "CLEAR") {
+    elements.input.value = "";
+  } else {
+    elements.input.value = `${elements.input.value}${getPokeKeyboardValue(key)}`.slice(0, 32);
+  }
+
+  elements.input.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
+}
+
+function canUsePokeKeyboard() {
+  return (
+    state.pokeKeyboardVisible &&
+    !state.roundResolved &&
+    !state.quizRejected &&
+    state.currentSettings?.answerStyle === "typed"
+  );
+}
+
+function getPokeKeyboardValue(key) {
+  if (key === "SPACE") return " ";
+  return key;
+}
+
+function getPokeKeyboardLabel(key) {
+  if (key === "SPACE") return "SP";
+  if (key === "BACK") return "DEL";
+  if (key === "CLEAR") return "CLR";
+  if (key === "ENTER") return "OK";
+  return key;
+}
+
+function getPokeKeyboardAriaLabel(key) {
+  if (key === "SPACE") return "Space";
+  if (key === "BACK") return "Backspace";
+  if (key === "CLEAR") return "Clear answer";
+  if (key === "ENTER") return "Submit answer";
+  return `Key ${key}`;
 }
 
 function onGuessSubmit(event) {
@@ -843,6 +974,7 @@ function resetQuizRunState() {
   state.quizRejected = false;
   state.menuExitArmedUntil = 0;
   state.quizArtworkSource = "pixel";
+  state.pokeKeyboardVisible = false;
   cancelArtToggleHold();
   state.eligibilitySnapshot = null;
 }
@@ -862,6 +994,7 @@ async function rejectActiveQuiz(event) {
   elements.quizPanel.classList.add("hidden");
   elements.summaryPanel.classList.add("hidden");
   elements.autofillList.replaceChildren();
+  setPokeKeyboardVisible(false);
   setLockStatus("Run closed. Session locked.");
   await progressStore.closeActiveSessionAfterRejectedQuiz("Run closed. Session locked.");
   updateDeviceShell();
@@ -892,8 +1025,10 @@ function failCurrentRound() {
   pulseWorkspace("screen-error");
   state.roundResolved = true;
   elements.input.disabled = true;
+  elements.input.readOnly = false;
   elements.guessButton.disabled = true;
   elements.autofillList.replaceChildren();
+  setPokeKeyboardVisible(false);
   elements.choiceGrid.querySelectorAll("button").forEach((button) => {
     button.disabled = true;
   });
@@ -905,8 +1040,10 @@ function revealPokemon(message, tone) {
   renderQuizArtwork();
   pulseElement(elements.art, "sprite-reveal");
   elements.input.disabled = true;
+  elements.input.readOnly = false;
   elements.guessButton.disabled = true;
   elements.autofillList.replaceChildren();
+  setPokeKeyboardVisible(false);
   elements.next.classList.remove("hidden");
   elements.choiceGrid.querySelectorAll("button").forEach((button) => {
     const correct = state.choices.find((choice) => choice.value === button.dataset.value)?.correct;
@@ -950,7 +1087,9 @@ async function finishQuiz() {
     !state.currentSettings.timed ? "Casual runs do not update the PokéDex log." : "",
     state.stagedCorrectIds.length ? "Correct guesses were added to your PokéDex." : "",
   ].filter(Boolean).join(" ");
-  renderDex();
+  state.dexRowsDirty = true;
+  renderDexSummary();
+  renderDexRowsIfVisible();
   await renderLeaderboard();
 }
 
@@ -1041,6 +1180,11 @@ function renderLocalTrainerProfiles(progress) {
 }
 
 function renderDex() {
+  renderDexSummary();
+  renderDexRows({ force: true });
+}
+
+function renderDexSummary() {
   if (!isDeviceUnlocked()) return;
   if (!state.catalog) return;
   const caughtIds = new Set((state.progress ?? progressStore.getState()).correctPokemonIds);
@@ -1053,9 +1197,28 @@ function renderDex() {
   elements.dexSummary.textContent =
     `${caughtTotal}/${allTotal} total caught. ${caughtInFilter}/${filtered.length} in current setup.`;
   elements.dexFill.style.width = `${percent}%`;
+}
+
+function renderDexRowsIfVisible() {
+  if (state.activeView !== "dex") return;
+  renderDexRows();
+}
+
+function renderDexRows({ force = false } = {}) {
+  if (!isDeviceUnlocked()) return;
+  if (!state.catalog) return;
+  if (!force && !state.dexRowsDirty) return;
+  if (state.activeView !== "dex") {
+    state.dexRowsDirty = true;
+    return;
+  }
+
+  const caughtIds = new Set((state.progress ?? progressStore.getState()).correctPokemonIds);
+  const filtered = state.pool.length ? state.pool : getFilteredPool();
   elements.dexList.replaceChildren(
     ...filtered.slice(0, 300).map((pokemon) => renderDexEntry(pokemon, caughtIds.has(pokemon.id))),
   );
+  state.dexRowsDirty = false;
 }
 
 async function renderLeaderboard() {
@@ -1440,6 +1603,7 @@ function updateOsMenuButton() {
 }
 
 function onGameboyKeyDown(event) {
+  if (handlePokeKeyboardKeyDown(event)) return;
   if (isFormField(event.target) && event.key !== "Escape") return;
   if (!isDeviceUnlocked()) {
     if (event.key === "Escape") {
@@ -1478,6 +1642,27 @@ function onGameboyKeyDown(event) {
     event.preventDefault();
     requestOsMenu();
   }
+}
+
+function handlePokeKeyboardKeyDown(event) {
+  if (!canUsePokeKeyboard()) return false;
+
+  const key = mapPokeKeyboardEventKey(event.key);
+  if (!key) return false;
+
+  event.preventDefault();
+  playCue(key === "ENTER" ? "confirm" : "menu");
+  return applyPokeKeyboardKey(key);
+}
+
+function mapPokeKeyboardEventKey(key) {
+  if (key === "Enter") return "ENTER";
+  if (key === "Backspace") return "BACK";
+  if (key === "Delete") return "CLEAR";
+  if (key === " ") return "SPACE";
+  if (key === "-" || key === "'" || key === ".") return key;
+  if (/^[a-z]$/i.test(key)) return key.toUpperCase();
+  return "";
 }
 
 function moveGameboyMenu(direction) {
@@ -1546,16 +1731,33 @@ function unlockDevice(access) {
   setActiveView("menu");
 }
 
-function lockDevice() {
+async function lockDevice() {
   const progress = state.progress ?? progressStore.getState();
+  elements.logout.disabled = true;
+  if (progress.user) {
+    elements.authStatus.textContent = "Signing out...";
+    setLockStatus("Signing out of Google...");
+    try {
+      await progressStore.signOut();
+    } catch (error) {
+      playCue("deny");
+      pulseWorkspace("screen-error");
+      const message = error?.message || "Sign-out did not finish. Try again.";
+      elements.authStatus.textContent = message;
+      setLockStatus(message);
+      elements.logout.disabled = false;
+      return;
+    }
+  }
+
   sessionStorage.removeItem(DEVICE_ACCESS_KEY);
   state.deviceUnlocked = false;
   state.deviceAccess = null;
-  if (progress.user) void progressStore.signOut();
   if (progress.localTrainer) progressStore.clearLocalTrainer();
   showOsMenu();
   updateDeviceShell();
   updateSetupPreview();
+  elements.logout.disabled = false;
 }
 
 function updateDeviceShell() {

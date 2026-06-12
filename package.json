@@ -2,6 +2,7 @@
   "scripts": {
     "build:pokedex": "node scripts/build-pokedex-data.mjs",
     "build:android": "powershell -ExecutionPolicy Bypass -File tools/build-apk.ps1",
+    "build:android:debug": "powershell -ExecutionPolicy Bypass -File tools/build-apk.ps1 -Variant Debug",
     "validate:pokedex": "node scripts/validate-pokedex-data.mjs",
     "test": "node scripts/run-tests.mjs"
   },

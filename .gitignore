@@ -17,6 +17,12 @@ android/build/
 android/.gradle/
 android/app/build/
 android/local.properties
+android/release-signing.properties
+android/*.jks
+android/*.keystore
+android/app/*.jks
+android/app/*.keystore
+*.keystore
 
 # Editor directories and files
 .vscode/*

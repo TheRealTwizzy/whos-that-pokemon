@@ -49,6 +49,7 @@ public class MainActivity extends Activity {
     private static final String TRUSTED_PATH_PREFIX = "/whos-that-pokemon/";
     private static final String JS_BRIDGE_NAME = "PokeNativeAuth";
     private static final String NATIVE_AUTH_EVENT = "poke-native-auth-result";
+    private static final String NATIVE_SIGN_OUT_EVENT = "poke-native-signout-result";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Executor mainExecutor = new Executor() {
@@ -286,12 +287,15 @@ public class MainActivity extends Activity {
             });
     }
 
-    private void signOutNative() {
+    private void signOutNative(String requestId) {
         if (firebaseAuth != null) {
             firebaseAuth.signOut();
         }
 
-        if (credentialManager == null || authExecutor == null) return;
+        if (credentialManager == null || authExecutor == null) {
+            postNativeSignOutResult(requestId, "", "");
+            return;
+        }
         credentialManager.clearCredentialStateAsync(
             new ClearCredentialStateRequest(),
             new CancellationSignal(),
@@ -299,12 +303,12 @@ public class MainActivity extends Activity {
             new CredentialManagerCallback<Void, ClearCredentialException>() {
                 @Override
                 public void onResult(Void result) {
-                    // Web Firebase sign-out owns the visible UI state.
+                    postNativeSignOutResult(requestId, "", "");
                 }
 
                 @Override
                 public void onError(ClearCredentialException error) {
-                    // Credential state clearing is best-effort; web sign-out still proceeds.
+                    postNativeSignOutResult(requestId, "auth/native-sign-out-unavailable", error.getMessage());
                 }
             }
         );
@@ -322,6 +326,24 @@ public class MainActivity extends Activity {
 
     private void postNativeAuthError(String requestId, String code, String message) {
         postNativeAuthResult(requestId, "", code, message);
+    }
+
+    private void postNativeSignOutResult(String requestId, String code, String message) {
+        String script = "(function(){window.dispatchEvent(new CustomEvent(" +
+            json(NATIVE_SIGN_OUT_EVENT) +
+            ",{detail:{requestId:" + json(requestId) +
+            ",code:" + json(code) +
+            ",message:" + json(message) +
+            "}}));})();";
+
+        mainExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                if (webView != null && isTrustedAppUrl(webView.getUrl())) {
+                    webView.evaluateJavascript(script, null);
+                }
+            }
+        });
     }
 
     private void postNativeAuthResult(String requestId, String idToken, String code, String message) {
@@ -416,11 +438,12 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void signOut() {
+        public void signOut(String requestId) {
+            String safeRequestId = cleanRequestId(requestId);
             mainExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    signOutNative();
+                    signOutNative(safeRequestId);
                 }
             });
         }

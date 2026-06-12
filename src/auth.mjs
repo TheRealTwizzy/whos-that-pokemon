@@ -9,6 +9,7 @@ const LOCAL_TRAINER_PROGRESS_PREFIX = "pokemonQuiz.localTrainerProgress.v1.";
 const LOCAL_TRAINER_PERSONAL_SCORES_PREFIX = "pokemonQuiz.localTrainerPersonalScores.v1.";
 const LOCAL_TRAINER_PREFERENCES_PREFIX = "pokemonQuiz.localTrainerPreferences.v1.";
 const NATIVE_AUTH_RESULT_EVENT = "poke-native-auth-result";
+const NATIVE_SIGN_OUT_RESULT_EVENT = "poke-native-signout-result";
 
 let nativeAuthRequestCounter = 0;
 
@@ -207,6 +208,66 @@ export function requestNativeGoogleIdToken(nativeAuth = getNativeAuthBridge(), o
   });
 }
 
+export function requestNativeSignOut(nativeAuth = getNativeAuthBridge(), options = {}) {
+  const eventTarget = globalThis.window;
+  const timeoutMs = options.timeoutMs ?? 250;
+
+  if (!nativeAuth || typeof nativeAuth.signOut !== "function") {
+    return Promise.resolve();
+  }
+  if (!eventTarget?.addEventListener) {
+    const error = new Error("Native Android sign-out bridge is unavailable.");
+    error.code = "auth/native-sign-out-unavailable";
+    return Promise.reject(error);
+  }
+
+  const requestId = `native-signout-${Date.now()}-${++nativeAuthRequestCounter}`;
+
+  return new Promise((resolve, reject) => {
+    let timeoutId = 0;
+    const cleanup = () => {
+      eventTarget.removeEventListener(NATIVE_SIGN_OUT_RESULT_EVENT, onResult);
+      if (timeoutId) globalThis.clearTimeout(timeoutId);
+    };
+    const rejectWith = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onResult = (event) => {
+      const detail = event?.detail ?? {};
+      if (detail.requestId !== requestId) return;
+
+      if (!detail.code) {
+        cleanup();
+        resolve();
+        return;
+      }
+
+      const error = new Error(detail.message || "Native Android sign-out failed.");
+      error.code = detail.code || "auth/native-sign-out-unavailable";
+      rejectWith(error);
+    };
+
+    eventTarget.addEventListener(NATIVE_SIGN_OUT_RESULT_EVENT, onResult);
+    if (timeoutMs > 0) {
+      timeoutId = globalThis.setTimeout(() => {
+        // Older APKs expose signOut() but do not emit a completion event.
+        // The web Firebase sign-out already completes independently, so keep
+        // Lock usable while newer wrappers still report explicit failures.
+        cleanup();
+        resolve();
+      }, timeoutMs);
+    }
+
+    try {
+      nativeAuth.signOut(requestId);
+    } catch (error) {
+      error.code = error.code || "auth/native-sign-out-unavailable";
+      rejectWith(error);
+    }
+  });
+}
+
 export function createProgressStore(onChange = () => {}, options = {}) {
   const localTrainerStore = createLocalTrainerStore(localStorage);
   const activeLocalTrainer = readActiveLocalTrainer(localTrainerStore);
@@ -396,7 +457,7 @@ export function createProgressStore(onChange = () => {}, options = {}) {
     }
   }
 
-  async function signOut() {
+  async function signOut({ tolerateErrors = false } = {}) {
     const tasks = [];
     if (firebase) {
       tasks.push(firebase.authModule.signOut(firebase.auth));
@@ -404,10 +465,29 @@ export function createProgressStore(onChange = () => {}, options = {}) {
 
     const nativeAuth = getConfiguredNativeAuth();
     if (nativeAuth && typeof nativeAuth.signOut === "function") {
-      tasks.push(Promise.resolve().then(() => nativeAuth.signOut()));
+      tasks.push(requestNativeSignOut(nativeAuth));
     }
 
-    if (tasks.length) await Promise.allSettled(tasks);
+    if (!tasks.length) return { ok: true, errors: [] };
+
+    const results = await Promise.allSettled(tasks);
+    const errors = results
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason);
+    if (errors.length && !tolerateErrors) {
+      const error = new Error("Sign-out did not finish. Check your connection and try again.");
+      error.causes = errors;
+      throw error;
+    }
+
+    state.authPending = false;
+    state.user = null;
+    state.status = state.localTrainer
+      ? `Local account logged in: ${state.localTrainer.displayName}.`
+      : "PokÃ©OS login required. Choose Guest, Local Account, or Google.";
+    emit();
+
+    return { ok: errors.length === 0, errors };
   }
 
   async function closeActiveSessionAfterRejectedQuiz(
@@ -415,7 +495,7 @@ export function createProgressStore(onChange = () => {}, options = {}) {
   ) {
     state.authPending = false;
     if (state.user) {
-      await signOut().catch(() => {});
+      await signOut({ tolerateErrors: true }).catch(() => {});
     }
 
     state.user = null;

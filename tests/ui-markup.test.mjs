@@ -47,6 +47,25 @@ test("PokeOS contains account, install, fullscreen, and rights surfaces", () => 
   assert.equal(indexHtml.includes("Nintendo/Creatures Inc./GAME FREAK inc."), true);
 });
 
+test("quiz surface includes visible quit action and PokeOS keyboard", () => {
+  assert.equal(indexHtml.includes('id="restart-button"'), true);
+  assert.equal(indexHtml.includes('id="poke-keyboard"'), true);
+  assert.equal(indexHtml.includes('aria-label="PokéOS keyboard"'), true);
+  assert.equal(stylesCss.includes(".quiz-actions #restart-button {\n  display: none;"), false);
+  assert.equal(stylesCss.includes(".poke-keyboard"), true);
+  assert.equal(appJs.includes("POKE_KEYBOARD_ROWS"), true);
+  assert.equal(appJs.includes("handlePokeKeyboardKeyDown"), true);
+  assert.equal(appJs.includes("inputmode\", \"none\""), true);
+});
+
+test("PokeOS keyboard compact layout protects mobile portrait controls", () => {
+  assert.equal(stylesCss.includes(".quiz-panel.poke-keyboard-active .art-panel {\n  height: 76px;"), true);
+  assert.equal(stylesCss.includes(".quiz-panel.poke-keyboard-active #pokemon-art {\n  max-height: 70px;"), true);
+  assert.equal(stylesCss.includes(".quiz-panel.poke-keyboard-active .autofill-list {\n  display: none;"), true);
+  assert.equal(stylesCss.includes(".quiz-panel.poke-keyboard-active .message {\n  min-height: 18px;"), true);
+  assert.equal(stylesCss.includes(".quiz-panel.poke-keyboard-active .quiz-actions button {\n  min-height: 24px;"), true);
+});
+
 test("site exposes an installable mobile web app manifest", () => {
   assert.equal(indexHtml.includes('rel="manifest"'), true);
   assert.equal(indexHtml.includes("viewport-fit=cover"), true);

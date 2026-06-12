@@ -6,6 +6,7 @@ import {
   createLocalTrainerStore,
   mapGoogleLoginError,
   requestNativeGoogleIdToken,
+  requestNativeSignOut,
 } from "../src/auth.mjs";
 
 function createMemoryStorage() {
@@ -220,6 +221,56 @@ test("requests a Google ID token through the native Android bridge", async () =>
   }
 });
 
+test("requests native Android sign-out and waits for bridge completion", async () => {
+  const restoreWindow = installWindowEventTarget();
+  const requestedIds = [];
+
+  try {
+    const nativeAuth = {
+      signOut(requestId) {
+        requestedIds.push(requestId);
+        queueMicrotask(() => {
+          window.dispatchEvent(new CustomEvent("poke-native-signout-result", {
+            detail: { requestId },
+          }));
+        });
+      },
+    };
+
+    await requestNativeSignOut(nativeAuth, { timeoutMs: 100 });
+
+    assert.equal(requestedIds.length, 1);
+    assert.match(requestedIds[0], /^native-signout-/);
+  } finally {
+    restoreWindow();
+  }
+});
+
+test("treats native Android sign-out without a completion event as fire-and-forget", async () => {
+  const restoreWindow = installWindowEventTarget();
+  const calls = [];
+
+  try {
+    const nativeAuth = {
+      signOut(...args) {
+        calls.push(args);
+      },
+    };
+
+    await Promise.race([
+      requestNativeSignOut(nativeAuth),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Legacy native sign-out stayed pending too long.")), 500);
+      }),
+    ]);
+
+    assert.equal(calls.length, 1);
+    assert.match(calls[0][0], /^native-signout-/);
+  } finally {
+    restoreWindow();
+  }
+});
+
 test("signs into web Firebase with the Google ID token returned by native Android", async () => {
   const restoreWindow = installWindowEventTarget({ POKEMON_FIREBASE_CONFIG: { apiKey: "test-key" } });
   const restoreStorage = installBrowserStorage({
@@ -242,8 +293,13 @@ test("signs into web Firebase with the Google ID token returned by native Androi
           }));
         });
       },
-      signOut() {
-        calls.push(["native-sign-out"]);
+      signOut(requestId) {
+        calls.push(["native-sign-out", requestId]);
+        queueMicrotask(() => {
+          window.dispatchEvent(new CustomEvent("poke-native-signout-result", {
+            detail: { requestId },
+          }));
+        });
       },
     };
     const firebaseLoader = createFakeFirebaseLoader({
@@ -276,7 +332,8 @@ test("signs into web Firebase with the Google ID token returned by native Androi
 
     await store.signOut();
 
-    assert.deepEqual(calls.at(-1), ["native-sign-out"]);
+    assert.equal(calls.at(-1)[0], "native-sign-out");
+    assert.equal(store.getState().user, null);
   } finally {
     restoreStorage();
     restoreWindow();

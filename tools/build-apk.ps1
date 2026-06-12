@@ -1,6 +1,6 @@
 param(
-    [ValidateSet("Debug")]
-    [string] $Variant = "Debug"
+    [ValidateSet("Debug", "Release")]
+    [string] $Variant = "Release"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +11,31 @@ $androidRoot = Join-Path $root "android"
 $downloads = Join-Path $root "downloads"
 $finalApk = Join-Path $downloads "whos-that-pokemon.apk"
 $gradleVersion = "8.13"
+$releaseSigningFile = Join-Path $androidRoot "release-signing.properties"
+$releaseSigningProperties = @{}
+if (Test-Path $releaseSigningFile) {
+    $releaseSigningProperties = Get-Content -LiteralPath $releaseSigningFile -Raw | ConvertFrom-StringData
+}
+
+function Get-SigningValue {
+    param([string[]] $Names)
+
+    foreach ($name in $Names) {
+        $envValue = [Environment]::GetEnvironmentVariable($name)
+        if (-not [string]::IsNullOrWhiteSpace($envValue)) {
+            return $envValue.Trim()
+        }
+    }
+
+    foreach ($name in $Names) {
+        $fileValue = $releaseSigningProperties[$name]
+        if (-not [string]::IsNullOrWhiteSpace($fileValue)) {
+            return $fileValue.Trim()
+        }
+    }
+
+    return ""
+}
 
 $androidHome = $env:ANDROID_HOME
 if ([string]::IsNullOrWhiteSpace($androidHome)) {
@@ -68,6 +93,53 @@ if ($null -eq $gradleCommand) {
 
 New-Item -ItemType Directory -Force -Path $downloads | Out-Null
 
+$variantLower = $Variant.ToLowerInvariant()
+if ($Variant -eq "Release") {
+    $releaseStoreFile = Get-SigningValue @(
+        "WTP_RELEASE_STORE_FILE",
+        "wtp.release.storeFile",
+        "POKE_RELEASE_STORE_FILE",
+        "ANDROID_KEYSTORE_PATH"
+    )
+    $releaseStorePassword = Get-SigningValue @(
+        "WTP_RELEASE_STORE_PASSWORD",
+        "wtp.release.storePassword",
+        "POKE_RELEASE_STORE_PASSWORD",
+        "ANDROID_KEYSTORE_PASSWORD"
+    )
+    $releaseKeyAlias = Get-SigningValue @(
+        "WTP_RELEASE_KEY_ALIAS",
+        "wtp.release.keyAlias",
+        "POKE_RELEASE_KEY_ALIAS",
+        "ANDROID_KEY_ALIAS"
+    )
+    $releaseKeyPassword = Get-SigningValue @(
+        "WTP_RELEASE_KEY_PASSWORD",
+        "wtp.release.keyPassword",
+        "POKE_RELEASE_KEY_PASSWORD",
+        "ANDROID_KEY_PASSWORD"
+    )
+
+    $missingReleaseSigning = @()
+    if ([string]::IsNullOrWhiteSpace($releaseStoreFile)) { $missingReleaseSigning += "store file" }
+    if ([string]::IsNullOrWhiteSpace($releaseStorePassword)) { $missingReleaseSigning += "store password" }
+    if ([string]::IsNullOrWhiteSpace($releaseKeyAlias)) { $missingReleaseSigning += "key alias" }
+    if ([string]::IsNullOrWhiteSpace($releaseKeyPassword)) { $missingReleaseSigning += "key password" }
+
+    if ($missingReleaseSigning.Count -gt 0) {
+        throw "Release signing is required before publishing downloads\whos-that-pokemon.apk. Missing: $($missingReleaseSigning -join ', '). Set WTP_RELEASE_STORE_FILE, WTP_RELEASE_STORE_PASSWORD, WTP_RELEASE_KEY_ALIAS, and WTP_RELEASE_KEY_PASSWORD, or create ignored android\release-signing.properties. Use -Variant Debug for local test APKs."
+    }
+
+    $releaseStorePath = if ([System.IO.Path]::IsPathRooted($releaseStoreFile)) {
+        $releaseStoreFile
+    } else {
+        Join-Path $androidRoot $releaseStoreFile
+    }
+    if (-not (Test-Path $releaseStorePath)) {
+        throw "Release keystore was not found: $releaseStorePath"
+    }
+}
+
 Push-Location $androidRoot
 try {
     & $gradleCommand @gradleArgs ":app:assemble$Variant"
@@ -76,14 +148,18 @@ try {
     Pop-Location
 }
 
-$variantLower = $Variant.ToLowerInvariant()
 $builtApk = Join-Path $androidRoot "app\build\outputs\apk\$variantLower\app-$variantLower.apk"
 if (-not (Test-Path $builtApk)) {
     throw "Gradle did not write the expected APK: $builtApk"
 }
 
-Copy-Item -LiteralPath $builtApk -Destination $finalApk -Force
-Write-Host "Built $finalApk"
+if ($Variant -eq "Release") {
+    Copy-Item -LiteralPath $builtApk -Destination $finalApk -Force
+    Write-Host "Built release APK: $finalApk"
+} else {
+    Write-Host "Built local debug APK: $builtApk"
+    Write-Host "Debug builds do not overwrite the public downloads\whos-that-pokemon.apk artifact."
+}
 
 $debugKeystore = Join-Path $env:USERPROFILE ".android\debug.keystore"
 $keytool = if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
