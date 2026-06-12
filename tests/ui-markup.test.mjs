@@ -45,6 +45,9 @@ test("PokeOS contains account, install, fullscreen, and rights surfaces", () => 
   assert.equal(indexHtml.includes('data-lcd-fullscreen'), true);
   assert.equal(indexHtml.includes('data-install-app'), true);
   assert.equal(indexHtml.includes("downloads/whos-that-pokemon.apk"), true);
+  assert.equal(indexHtml.includes('id="apk-reinstall-prompt"'), true);
+  assert.equal(indexHtml.includes("uninstall the old APK"), true);
+  assert.equal(indexHtml.includes("PokeOS version-mismatch"), true);
   assert.equal(indexHtml.includes("Nintendo/Creatures Inc./GAME FREAK inc."), true);
 });
 
@@ -78,10 +81,25 @@ test("site exposes an installable mobile web app manifest", () => {
 
 test("service worker cache version refreshes deployed PokeOS clients", () => {
   assert.equal(serviceWorkerJs.includes('const CACHE_PREFIX = "pokedex-trainer-os-";'), true);
-  assert.equal(serviceWorkerJs.includes("const CACHE_NAME = `${CACHE_PREFIX}v4`;"), true);
+  assert.equal(serviceWorkerJs.includes("const CACHE_NAME = `${CACHE_PREFIX}v5`;"), true);
   assert.equal(serviceWorkerJs.includes("key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME"), true);
   assert.equal(serviceWorkerJs.includes('self.clients.matchAll({ type: "window" })'), true);
   assert.equal(serviceWorkerJs.includes("client.navigate(client.url)"), true);
+});
+
+test("web app blocks outdated native Android wrappers before login", () => {
+  assert.equal(appJs.includes("ANDROID_UPDATE_MANIFEST_URL"), true);
+  assert.equal(appJs.includes("MIN_NATIVE_WRAPPER_VERSION_CODE"), true);
+  assert.equal(appJs.includes("resolveNativeWrapperUpdateGate"), true);
+  assert.equal(appJs.includes("nativeUpdateGate"), true);
+  assert.equal(appJs.includes("Android app update required"), true);
+  assert.equal(appJs.includes("downloads/whos-that-pokemon.apk"), true);
+  assert.equal(appJs.includes("isNativeWrapperUpdateRequired"), true);
+  assert.equal(appJs.includes("showApkReinstallPrompt"), true);
+  assert.equal(appJs.includes("startApkDownload"), true);
+  assert.equal(appJs.includes("pendingApkDownloadUrl"), true);
+  assert.equal(stylesCss.includes(".apk-reinstall-prompt"), true);
+  assert.equal(stylesCss.includes(".apk-reinstall-card"), true);
 });
 
 test("mobile portrait uses stable landscape fitting instead of an orientation gate", () => {

@@ -1,5 +1,11 @@
 import { createAudioController } from "./audio.mjs";
-import { createProgressStore, getNativeAuthBridge, isNativeAuthBridgeAvailable } from "./auth.mjs";
+import {
+  createProgressStore,
+  getNativeAuthBridge,
+  getNativeWrapperUpdateGate,
+  isNativeAuthBridgeAvailable,
+  MIN_NATIVE_WRAPPER_VERSION_CODE,
+} from "./auth.mjs";
 import {
   buildAutofillSuggestions,
   buildLeaderboardKey,
@@ -25,6 +31,8 @@ import { loadPokemonCatalog } from "./pokemon-api.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const DEVICE_ACCESS_KEY = "pokemonQuiz.deviceAccess.v1";
+const ANDROID_UPDATE_MANIFEST_URL = "android-update.json";
+const ANDROID_APK_URL = "downloads/whos-that-pokemon.apk";
 const QUIZ_EXIT_CONFIRM_MS = 5000;
 const ART_TOGGLE_HOLD_MS = 420;
 const POKE_KEYBOARD_ROWS = [
@@ -111,6 +119,9 @@ const elements = {
   viewPanels: [...document.querySelectorAll("[data-view]")],
   lcdFullscreenButtons: [...document.querySelectorAll("[data-lcd-fullscreen]")],
   installButtons: [...document.querySelectorAll("[data-install-app]")],
+  downloadLinks: [...document.querySelectorAll(".download-link")],
+  apkReinstallPrompt: $("#apk-reinstall-prompt"),
+  apkReinstallConfirm: $("#apk-reinstall-confirm"),
 };
 
 const nativeAuthBridge = getNativeAuthBridge();
@@ -163,6 +174,8 @@ const state = {
   soundEnabled: audio.enabled,
   bootComplete: false,
   lcdOnlyMode: shouldStartInLcdOnlyMode(),
+  nativeUpdateGate: null,
+  pendingApkDownloadUrl: "",
   quizArtworkSource: "pixel",
   artToggleTimerId: 0,
   pokeKeyboardVisible: false,
@@ -217,10 +230,12 @@ function bindEvents() {
   document.addEventListener("pointerdown", primeAudio, { once: true });
   document.addEventListener("keydown", primeAudio, { once: true });
   elements.guest.addEventListener("click", () => {
+    if (rejectIfNativeWrapperUpdateRequired()) return;
     playCue("confirm");
     unlockDevice({ type: "guest", label: "Guest trainer" });
   });
   elements.register.addEventListener("click", () => {
+    if (rejectIfNativeWrapperUpdateRequired()) return;
     playCue("menu");
     elements.registerForm.classList.toggle("hidden");
     if (!elements.registerForm.classList.contains("hidden")) {
@@ -231,6 +246,7 @@ function bindEvents() {
   });
   elements.registerForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (rejectIfNativeWrapperUpdateRequired()) return;
     const name = elements.registerName.value.trim();
     const result = progressStore.createOrLoadLocalTrainer(name);
     if (!result.profile) {
@@ -252,6 +268,7 @@ function bindEvents() {
     setActiveView("menu");
   });
   elements.login.addEventListener("click", () => {
+    if (rejectIfNativeWrapperUpdateRequired()) return;
     if (!googleAuthEnvironment.supported) {
       playCue("deny");
       pulseWorkspace("screen-error");
@@ -283,6 +300,11 @@ function bindEvents() {
       void installMobileApp();
     });
   });
+  elements.downloadLinks.forEach((link) => {
+    link.addEventListener("click", onAndroidApkDownloadClick);
+  });
+  elements.apkReinstallPrompt?.addEventListener("click", confirmApkReinstallPrompt);
+  elements.apkReinstallConfirm?.addEventListener("click", confirmApkReinstallPrompt);
   elements.refreshData.addEventListener("click", () => {
     playCue("scan");
     pulseWorkspace("screen-scan");
@@ -379,13 +401,72 @@ function bindEvents() {
 async function init() {
   elements.soundEnabled.checked = state.soundEnabled;
   registerServiceWorker();
+  state.nativeUpdateGate = await resolveNativeWrapperUpdateGate();
+  updateNativeUpdateLinks();
   renderAuth();
   setLcdOnlyMode(state.lcdOnlyMode);
   updateDeviceShell();
+  if (isNativeWrapperUpdateRequired()) {
+    showApkReinstallPrompt(state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL);
+    completeBoot();
+    return;
+  }
   await progressStore.init();
   await ensureCatalogReady();
   if (isDeviceUnlocked()) setActiveView(state.activeView);
   completeBoot();
+}
+
+async function resolveNativeWrapperUpdateGate() {
+  const nativeWrapperDetected = isNativeWrapperClient();
+  if (!nativeWrapperDetected) return null;
+
+  const updateManifest = await loadAndroidUpdateManifest();
+  const gate = getNativeWrapperUpdateGate({
+    nativeAuth: nativeAuthBridge,
+    nativeWrapperDetected,
+    updateManifest,
+    minimumVersionCode: MIN_NATIVE_WRAPPER_VERSION_CODE,
+  });
+  return gate.required ? gate : null;
+}
+
+function isNativeWrapperClient() {
+  if (isNativeAuthBridgeAvailable(nativeAuthBridge)) return true;
+  const userAgent = navigator.userAgent.toLowerCase();
+  return Boolean(
+    googleAuthEnvironment.reason === "embedded-webview" &&
+      userAgent.includes("android") &&
+      (
+        userAgent.includes("; wv") ||
+        userAgent.includes("webview") ||
+        userAgent.includes("version/")
+      ),
+  );
+}
+
+async function loadAndroidUpdateManifest() {
+  try {
+    const response = await fetch(ANDROID_UPDATE_MANIFEST_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch {
+    return {
+      versionCode: MIN_NATIVE_WRAPPER_VERSION_CODE,
+      versionName: `${MIN_NATIVE_WRAPPER_VERSION_CODE}.0`,
+      minimumVersionCode: MIN_NATIVE_WRAPPER_VERSION_CODE,
+      required: true,
+      apkUrl: ANDROID_APK_URL,
+      sha256: "",
+    };
+  }
+}
+
+function updateNativeUpdateLinks() {
+  const apkUrl = state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL;
+  elements.downloadLinks.forEach((link) => {
+    link.href = apkUrl;
+  });
 }
 
 async function initCatalog({ forceRefresh = false } = {}) {
@@ -1096,6 +1177,7 @@ async function finishQuiz() {
 function renderAuth() {
   const progress = state.progress ?? progressStore.getState();
   const wasUnlocked = Boolean(state.deviceUnlocked);
+  const nativeUpdateRequired = isNativeWrapperUpdateRequired();
   if (progress.user) {
     state.deviceUnlocked = true;
     state.deviceAccess = { type: "google", label: progress.user.displayName || "Google trainer" };
@@ -1114,14 +1196,23 @@ function renderAuth() {
   const gate = getDeviceGate(progress);
   state.deviceUnlocked = !gate.locked;
   elements.authStatus.textContent = getHardwareStatusText(progress);
+  elements.guest.disabled = nativeUpdateRequired;
+  elements.register.disabled = nativeUpdateRequired;
+  elements.registerName.disabled = nativeUpdateRequired;
   elements.login.disabled =
+    nativeUpdateRequired ||
     !progress.authAvailable ||
     progress.authPending ||
     (!googleAuthEnvironment.supported && !progress.user);
-  elements.login.title = googleAuthEnvironment.supported ? "" : googleAuthEnvironment.message;
+  elements.login.title = nativeUpdateRequired
+    ? getNativeWrapperUpdateMessage()
+    : googleAuthEnvironment.supported ? "" : googleAuthEnvironment.message;
   elements.login.classList.toggle("hidden", Boolean(progress.user));
   elements.logout.classList.toggle("hidden", gate.locked);
-  if (gate.locked && !state.deviceAccess) {
+  if (nativeUpdateRequired) {
+    elements.registerForm.classList.add("hidden");
+    elements.lockStatus.textContent = getNativeWrapperUpdateMessage();
+  } else if (gate.locked && !state.deviceAccess) {
     elements.lockStatus.textContent = getLockStatusText(progress);
   }
   renderLocalTrainerProfiles(progress);
@@ -1164,7 +1255,9 @@ function renderLocalTrainerProfiles(progress) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = profile.displayName;
+      button.disabled = isNativeWrapperUpdateRequired();
       button.addEventListener("click", () => {
+        if (rejectIfNativeWrapperUpdateRequired()) return;
         const result = progressStore.selectLocalTrainer(profile.id);
         if (!result.selected) {
           setLockStatus("Local account was not found.");
@@ -1721,6 +1814,7 @@ function setMenuCursor(index, { focus = false } = {}) {
 }
 
 function unlockDevice(access) {
+  if (rejectIfNativeWrapperUpdateRequired()) return;
   state.deviceUnlocked = true;
   state.deviceAccess = normalizeDeviceAccess(access);
   writeDeviceAccess(state.deviceAccess);
@@ -1905,7 +1999,9 @@ function getViewportOrientationAngle() {
 }
 
 function completeBoot() {
-  elements.bootStatus.textContent = "PokéOS ready.";
+  elements.bootStatus.textContent = isNativeWrapperUpdateRequired()
+    ? "Android app update required."
+    : "PokéOS ready.";
   window.setTimeout(() => {
     state.bootComplete = true;
     elements.bootScreen.classList.add("boot-complete");
@@ -1915,6 +2011,7 @@ function completeBoot() {
 
 function getHardwareStatusText(progress) {
   if (!state.bootComplete) return "BOOT";
+  if (isNativeWrapperUpdateRequired()) return "UPDATE";
   const gate = getDeviceGate(progress);
   if (progress.authPending) return "LOGIN";
   return gate.locked ? "LOCKED" : "ONLINE";
@@ -1940,6 +2037,7 @@ function getOsAccountMethodLabel(provider) {
 }
 
 function getLockStatusText(progress) {
+  if (isNativeWrapperUpdateRequired()) return getNativeWrapperUpdateMessage();
   if (!googleAuthEnvironment.supported) return googleAuthEnvironment.message;
   return progress.status || "Guest access, local account, or Google account accepted.";
 }
@@ -1963,6 +2061,7 @@ function getDeviceGate(progress) {
 }
 
 function getGateAccess(progress) {
+  if (isNativeWrapperUpdateRequired()) return null;
   if (progress?.user?.uid) return { method: "google" };
   if (progress?.localTrainer?.uid) return { method: "registered" };
   if (state.deviceAccess?.type === "guest") return { method: "guest" };
@@ -1970,6 +2069,7 @@ function getGateAccess(progress) {
 }
 
 function getCurrentTrainerIdentity(progress = state.progress ?? progressStore.getState()) {
+  if (isNativeWrapperUpdateRequired()) return null;
   if (progress.user) {
     return {
       uid: progress.user.uid,
@@ -2010,6 +2110,62 @@ function setLockStatus(text) {
   elements.lockStatus.textContent = text;
 }
 
+function isNativeWrapperUpdateRequired() {
+  return Boolean(state.nativeUpdateGate?.required);
+}
+
+function getNativeWrapperUpdateMessage() {
+  const gate = state.nativeUpdateGate;
+  const latestVersion = gate?.latestVersionName || gate?.latestVersionCode || "latest";
+  return `Android app update required. Tap Android APK to download version ${latestVersion} before login.`;
+}
+
+function rejectIfNativeWrapperUpdateRequired() {
+  if (!isNativeWrapperUpdateRequired()) return false;
+  playCue("deny");
+  pulseWorkspace("screen-error");
+  setLockStatus(getNativeWrapperUpdateMessage());
+  showApkReinstallPrompt(state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL);
+  return true;
+}
+
+function onAndroidApkDownloadClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const link = event.currentTarget;
+  showApkReinstallPrompt(link?.href || ANDROID_APK_URL);
+}
+
+function showApkReinstallPrompt(apkUrl = ANDROID_APK_URL) {
+  state.pendingApkDownloadUrl = apkUrl;
+  if (!elements.apkReinstallPrompt) return;
+  elements.apkReinstallPrompt.classList.remove("hidden");
+  elements.apkReinstallPrompt.setAttribute("aria-hidden", "false");
+  window.setTimeout(() => {
+    elements.apkReinstallConfirm?.focus({ preventScroll: true });
+  }, 0);
+}
+
+function confirmApkReinstallPrompt(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const apkUrl = state.pendingApkDownloadUrl || ANDROID_APK_URL;
+  state.pendingApkDownloadUrl = "";
+  elements.apkReinstallPrompt?.classList.add("hidden");
+  elements.apkReinstallPrompt?.setAttribute("aria-hidden", "true");
+  startApkDownload(apkUrl);
+}
+
+function startApkDownload(apkUrl) {
+  const link = document.createElement("a");
+  link.href = apkUrl;
+  link.download = "whos-that-pokemon.apk";
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
 async function toggleLcdOnlyMode() {
   const nextMode = !state.lcdOnlyMode;
   setLcdOnlyMode(nextMode);
@@ -2038,6 +2194,12 @@ function updateLcdFullscreenButtons() {
 }
 
 async function installMobileApp() {
+  if (isNativeWrapperUpdateRequired()) {
+    setInstallStatus(getNativeWrapperUpdateMessage());
+    showApkReinstallPrompt(state.nativeUpdateGate?.apkUrl || ANDROID_APK_URL);
+    return;
+  }
+
   if (deferredInstallPrompt) {
     deferredInstallPrompt.prompt();
     await deferredInstallPrompt.userChoice.catch(() => null);

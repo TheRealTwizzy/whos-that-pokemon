@@ -1,13 +1,22 @@
 package com.twizzy.whosthatpokemon;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -18,7 +27,11 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
+import androidx.core.content.FileProvider;
 import androidx.credentials.ClearCredentialStateRequest;
 import androidx.credentials.Credential;
 import androidx.credentials.CredentialManager;
@@ -35,8 +48,20 @@ import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.GoogleAuthProvider;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -44,12 +69,17 @@ import java.util.concurrent.Executors;
 @SuppressWarnings("deprecation")
 public class MainActivity extends Activity {
     private static final String TRUSTED_APP_URL = "https://therealtwizzy.github.io/whos-that-pokemon/";
+    private static final String UPDATE_MANIFEST_URL = TRUSTED_APP_URL + "android-update.json";
     private static final String TRUSTED_SCHEME = "https";
     private static final String TRUSTED_HOST = "therealtwizzy.github.io";
     private static final String TRUSTED_PATH_PREFIX = "/whos-that-pokemon/";
     private static final String JS_BRIDGE_NAME = "PokeNativeAuth";
     private static final String NATIVE_AUTH_EVENT = "poke-native-auth-result";
     private static final String NATIVE_SIGN_OUT_EVENT = "poke-native-signout-result";
+    private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
+    private static final String UPDATE_APK_NAME = "whos-that-pokemon-update.apk";
+    private static final String EXPECTED_RELEASE_CERT_SHA256 = "11b887d0063a66446a2fafa1cd21902ec5ddd56315d78f33741754743aed53d0";
+    private static final int NETWORK_TIMEOUT_MS = 15000;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Executor mainExecutor = new Executor() {
@@ -64,8 +94,14 @@ public class MainActivity extends Activity {
     private CredentialManager credentialManager;
     private FirebaseAuth firebaseAuth;
     private ExecutorService authExecutor;
+    private ExecutorService updateExecutor;
     private CancellationSignal authCancellationSignal;
+    private TextView updateStatus;
+    private Button updateActionButton;
+    private UpdateInfo pendingUpdate;
+    private File verifiedUpdateApk;
     private boolean nativeBridgeInjected = false;
+    private boolean updateRequired = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,34 +112,11 @@ public class MainActivity extends Activity {
         credentialManager = CredentialManager.create(this);
         firebaseAuth = FirebaseAuth.getInstance();
         authExecutor = Executors.newSingleThreadExecutor();
+        updateExecutor = Executors.newSingleThreadExecutor();
 
-        webView = new WebView(this);
-        webView.setWebViewClient(new TrustedWebViewClient());
-        webView.setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
-            @Override
-            public void onSystemUiVisibilityChange(int visibility) {
-                hideSystemUi();
-            }
-        });
-
-        WebSettings settings = webView.getSettings();
-        settings.setDomStorageEnabled(true);
-        settings.setJavaScriptEnabled(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(false);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            settings.setSafeBrowsingEnabled(true);
-        }
-
-        setContentView(webView);
-        updateNativeBridgeForUrl(TRUSTED_APP_URL);
-        webView.loadUrl(TRUSTED_APP_URL);
+        webView = createTrustedWebView();
+        showUpdateScreen("Checking for APK updates...");
+        checkForUpdatesThenBoot();
     }
 
     @Override
@@ -122,6 +135,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (updateRequired) return;
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
             return;
@@ -140,6 +154,10 @@ public class MainActivity extends Activity {
             authExecutor.shutdownNow();
             authExecutor = null;
         }
+        if (updateExecutor != null) {
+            updateExecutor.shutdownNow();
+            updateExecutor = null;
+        }
         if (webView != null) {
             removeNativeBridge();
             webView.destroy();
@@ -147,6 +165,472 @@ public class MainActivity extends Activity {
         }
 
         super.onDestroy();
+    }
+
+    private WebView createTrustedWebView() {
+        WebView trustedWebView = new WebView(this);
+        trustedWebView.setWebViewClient(new TrustedWebViewClient());
+        trustedWebView.setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
+            @Override
+            public void onSystemUiVisibilityChange(int visibility) {
+                hideSystemUi();
+            }
+        });
+
+        WebSettings settings = trustedWebView.getSettings();
+        settings.setDomStorageEnabled(true);
+        settings.setJavaScriptEnabled(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            settings.setSafeBrowsingEnabled(true);
+        }
+
+        return trustedWebView;
+    }
+
+    private void showUpdateScreen(String message) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER);
+        layout.setPadding(40, 40, 40, 40);
+        layout.setBackgroundColor(Color.rgb(14, 18, 22));
+
+        TextView title = new TextView(this);
+        title.setText("PokeOS Update");
+        title.setTextColor(Color.rgb(151, 255, 171));
+        title.setTextSize(24);
+        title.setGravity(Gravity.CENTER);
+
+        updateStatus = new TextView(this);
+        updateStatus.setText(message);
+        updateStatus.setTextColor(Color.rgb(218, 246, 224));
+        updateStatus.setTextSize(16);
+        updateStatus.setGravity(Gravity.CENTER);
+        updateStatus.setPadding(0, 24, 0, 24);
+
+        updateActionButton = new Button(this);
+        updateActionButton.setText("Retry");
+        updateActionButton.setEnabled(false);
+        updateActionButton.setAllCaps(false);
+        updateActionButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                checkForUpdatesThenBoot();
+            }
+        });
+
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        layout.addView(title, titleParams);
+        layout.addView(updateStatus, statusParams);
+        layout.addView(updateActionButton, buttonParams);
+
+        setContentView(layout);
+        hideSystemUi();
+    }
+
+    private void checkForUpdatesThenBoot() {
+        if (updateExecutor == null) return;
+
+        updateRequired = false;
+        pendingUpdate = null;
+        verifiedUpdateApk = null;
+        setUpdateStatus("Checking for APK updates...");
+        configureUpdateAction("Retry", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                checkForUpdatesThenBoot();
+            }
+        });
+
+        updateExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    UpdateInfo updateInfo = fetchUpdateInfo();
+                    if (isRequiredUpdate(updateInfo)) {
+                        mainExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                showRequiredUpdate(updateInfo);
+                            }
+                        });
+                        return;
+                    }
+
+                    mainExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            loadTrustedWebView();
+                        }
+                    });
+                } catch (Exception error) {
+                    mainExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            showUpdateCheckFailure(error);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    private void loadTrustedWebView() {
+        if (webView == null) return;
+        updateRequired = false;
+        setContentView(webView);
+        updateNativeBridgeForUrl(TRUSTED_APP_URL);
+        webView.loadUrl(TRUSTED_APP_URL);
+    }
+
+    private void showRequiredUpdate(UpdateInfo updateInfo) {
+        updateRequired = true;
+        pendingUpdate = updateInfo;
+        setUpdateStatus("Android app update required. Downloading version " + updateInfo.versionName + "...");
+        configureUpdateAction("Downloading...", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                downloadAndInstallUpdate(updateInfo);
+            }
+        });
+        downloadAndInstallUpdate(updateInfo);
+    }
+
+    private void downloadAndInstallUpdate(UpdateInfo updateInfo) {
+        if (updateExecutor == null) return;
+
+        pendingUpdate = updateInfo;
+        setUpdateStatus("Downloading update APK...");
+        configureUpdateAction("Downloading...", false, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                downloadAndInstallUpdate(updateInfo);
+            }
+        });
+
+        updateExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File apkFile = downloadVerifiedApk(updateInfo);
+                    mainExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            verifiedUpdateApk = apkFile;
+                            setUpdateStatus("Update verified. Android will ask you to approve the install.");
+                            configureUpdateAction("Install Update", true, new View.OnClickListener() {
+                                @Override
+                                public void onClick(View view) {
+                                    launchInstallerForVerifiedUpdate();
+                                }
+                            });
+                            launchInstallerForVerifiedUpdate();
+                        }
+                    });
+                } catch (Exception error) {
+                    mainExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            showUpdateDownloadFailure(error);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    private void showUpdateCheckFailure(Exception error) {
+        updateRequired = true;
+        setUpdateStatus("Update check failed. Connect to the internet and retry.\n" + cleanErrorMessage(error));
+        configureUpdateAction("Retry", true, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                checkForUpdatesThenBoot();
+            }
+        });
+    }
+
+    private void showUpdateDownloadFailure(Exception error) {
+        updateRequired = true;
+        String versionName = pendingUpdate != null ? pendingUpdate.versionName : "latest";
+        setUpdateStatus("Could not install version " + versionName + ".\n" + cleanErrorMessage(error));
+        configureUpdateAction("Retry Update", true, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (pendingUpdate != null) {
+                    downloadAndInstallUpdate(pendingUpdate);
+                } else {
+                    checkForUpdatesThenBoot();
+                }
+            }
+        });
+    }
+
+    private void launchInstallerForVerifiedUpdate() {
+        if (verifiedUpdateApk == null || !verifiedUpdateApk.exists()) {
+            if (pendingUpdate != null) {
+                downloadAndInstallUpdate(pendingUpdate);
+            } else {
+                checkForUpdatesThenBoot();
+            }
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && !getPackageManager().canRequestPackageInstalls()) {
+            setUpdateStatus("Allow installs from this app, then return and tap Install Update.");
+            configureUpdateAction("Install Update", true, new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    launchInstallerForVerifiedUpdate();
+                }
+            });
+            Intent settingsIntent = new Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + getPackageName())
+            );
+            startActivity(settingsIntent);
+            return;
+        }
+
+        try {
+            Uri apkUri = FileProvider.getUriForFile(
+                this,
+                getPackageName() + ".apkprovider",
+                verifiedUpdateApk
+            );
+            Intent installIntent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            installIntent.setDataAndType(apkUri, APK_MIME_TYPE);
+            installIntent.setClipData(ClipData.newUri(getContentResolver(), "PokeOS update", apkUri));
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
+            setUpdateStatus("Install prompt opened. Approve the Android update to continue.");
+            startActivity(installIntent);
+        } catch (ActivityNotFoundException error) {
+            showUpdateDownloadFailure(error);
+        } catch (RuntimeException error) {
+            showUpdateDownloadFailure(error);
+        }
+    }
+
+    private void setUpdateStatus(String message) {
+        if (updateStatus != null) {
+            updateStatus.setText(message);
+        }
+    }
+
+    private void configureUpdateAction(String label, boolean enabled, View.OnClickListener listener) {
+        if (updateActionButton == null) return;
+        updateActionButton.setText(label);
+        updateActionButton.setEnabled(enabled);
+        updateActionButton.setVisibility(View.VISIBLE);
+        updateActionButton.setOnClickListener(listener);
+    }
+
+    private UpdateInfo fetchUpdateInfo() throws IOException, JSONException {
+        String response = fetchString(UPDATE_MANIFEST_URL);
+        UpdateInfo updateInfo = UpdateInfo.fromJson(new JSONObject(response));
+
+        if (!getPackageName().equals(updateInfo.packageName)) {
+            throw new IOException("Update manifest package does not match this app.");
+        }
+        if (updateInfo.versionCode <= 0 || updateInfo.minimumVersionCode <= 0) {
+            throw new IOException("Update manifest version is invalid.");
+        }
+        if (!isTrustedAppUrl(updateInfo.apkUrl)) {
+            throw new IOException("Update APK URL is not trusted.");
+        }
+        if (!updateInfo.sha256.matches("[a-f0-9]{64}")) {
+            throw new IOException("Update APK SHA-256 is invalid.");
+        }
+
+        return updateInfo;
+    }
+
+    private boolean isRequiredUpdate(UpdateInfo updateInfo) {
+        if (BuildConfig.VERSION_CODE < updateInfo.minimumVersionCode) return true;
+        return updateInfo.required && BuildConfig.VERSION_CODE < updateInfo.versionCode;
+    }
+
+    private String fetchString(String urlString) throws IOException {
+        if (!isTrustedAppUrl(urlString)) {
+            throw new IOException("Update manifest URL is not trusted.");
+        }
+
+        HttpURLConnection connection = openConnection(urlString);
+        try {
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) {
+                throw new IOException("Update manifest returned HTTP " + code + ".");
+            }
+
+            try (InputStream input = connection.getInputStream();
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                copy(input, output, null);
+                return output.toString("UTF-8");
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private File downloadVerifiedApk(UpdateInfo updateInfo) throws IOException {
+        if (!isTrustedAppUrl(updateInfo.apkUrl)) {
+            throw new IOException("Update APK URL is not trusted.");
+        }
+
+        File updateDir = new File(getCacheDir(), "updates");
+        if (!updateDir.exists() && !updateDir.mkdirs()) {
+            throw new IOException("Could not create update cache.");
+        }
+        File apkFile = new File(updateDir, UPDATE_APK_NAME);
+        if (apkFile.exists() && !apkFile.delete()) {
+            throw new IOException("Could not replace stale update APK.");
+        }
+
+        MessageDigest digest = createSha256Digest();
+        HttpURLConnection connection = openConnection(updateInfo.apkUrl);
+        try {
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) {
+                throw new IOException("Update APK returned HTTP " + code + ".");
+            }
+
+            try (InputStream input = connection.getInputStream();
+                 OutputStream output = new FileOutputStream(apkFile)) {
+                copy(input, output, digest);
+            }
+        } finally {
+            connection.disconnect();
+        }
+
+        String actualSha256 = toHex(digest.digest());
+        if (!actualSha256.equals(updateInfo.sha256)) {
+            if (apkFile.exists()) apkFile.delete();
+            throw new IOException("Update APK SHA-256 did not match.");
+        }
+        verifyDownloadedApk(updateInfo, apkFile);
+
+        return apkFile;
+    }
+
+    private void verifyDownloadedApk(UpdateInfo updateInfo, File apkFile) throws IOException {
+        PackageInfo packageInfo = readApkPackageInfo(apkFile);
+        if (packageInfo == null) {
+            throw new IOException("Update APK package metadata could not be read.");
+        }
+        if (!getPackageName().equals(packageInfo.packageName)) {
+            throw new IOException("Update APK package does not match this app.");
+        }
+        long downloadedVersionCode = getPackageVersionCode(packageInfo);
+        if (downloadedVersionCode != updateInfo.versionCode) {
+            throw new IOException("Update APK version does not match the manifest.");
+        }
+        if (downloadedVersionCode <= BuildConfig.VERSION_CODE) {
+            throw new IOException("Update APK is not newer than this app.");
+        }
+        if (!hasExpectedSigningCertificate(packageInfo)) {
+            throw new IOException("Update APK signing certificate is not trusted.");
+        }
+    }
+
+    private PackageInfo readApkPackageInfo(File apkFile) {
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ? PackageManager.GET_SIGNING_CERTIFICATES
+            : PackageManager.GET_SIGNATURES;
+        PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), flags);
+        if (packageInfo != null && packageInfo.applicationInfo != null) {
+            packageInfo.applicationInfo.sourceDir = apkFile.getAbsolutePath();
+            packageInfo.applicationInfo.publicSourceDir = apkFile.getAbsolutePath();
+        }
+        return packageInfo;
+    }
+
+    private long getPackageVersionCode(PackageInfo packageInfo) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return packageInfo.getLongVersionCode();
+        }
+        return packageInfo.versionCode;
+    }
+
+    private boolean hasExpectedSigningCertificate(PackageInfo packageInfo) throws IOException {
+        Signature[] signatures;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            if (packageInfo.signingInfo == null) return false;
+            signatures = packageInfo.signingInfo.hasMultipleSigners()
+                ? packageInfo.signingInfo.getApkContentsSigners()
+                : packageInfo.signingInfo.getSigningCertificateHistory();
+        } else {
+            signatures = packageInfo.signatures;
+        }
+        if (signatures == null) return false;
+
+        for (Signature signature : signatures) {
+            if (signature == null) continue;
+            String certSha256 = toHex(createSha256Digest().digest(signature.toByteArray()));
+            if (EXPECTED_RELEASE_CERT_SHA256.equals(certSha256)) return true;
+        }
+        return false;
+    }
+
+    private HttpURLConnection openConnection(String urlString) throws IOException {
+        URL url = new URL(urlString);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(NETWORK_TIMEOUT_MS);
+        connection.setReadTimeout(NETWORK_TIMEOUT_MS);
+        connection.setUseCaches(false);
+        connection.setRequestProperty("Accept", "application/json, application/vnd.android.package-archive, */*");
+        return connection;
+    }
+
+    private static void copy(InputStream input, OutputStream output, MessageDigest digest) throws IOException {
+        byte[] buffer = new byte[16 * 1024];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            if (digest != null) digest.update(buffer, 0, read);
+            output.write(buffer, 0, read);
+        }
+    }
+
+    private static MessageDigest createSha256Digest() throws IOException {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 verification is unavailable.", error);
+        }
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            builder.append(String.format(Locale.US, "%02x", value & 0xff));
+        }
+        return builder.toString();
+    }
+
+    private static String cleanErrorMessage(Exception error) {
+        String message = error != null ? error.getMessage() : "";
+        if (message == null || message.trim().isEmpty()) return "Unknown update error.";
+        return message.trim();
     }
 
     private void updateNativeBridgeForUrl(String url) {
@@ -194,6 +678,10 @@ public class MainActivity extends Activity {
     }
 
     private void startNativeGoogleSignIn(String requestId) {
+        if (updateRequired) {
+            postNativeAuthError(requestId, "auth/native-login-unavailable", "Android app update required.");
+            return;
+        }
         if (webView == null || !isTrustedAppUrl(webView.getUrl())) {
             postNativeAuthError(requestId, "auth/native-login-unavailable", "Native Google login is only available on the trusted app page.");
             return;
@@ -446,6 +934,61 @@ public class MainActivity extends Activity {
                     signOutNative(safeRequestId);
                 }
             });
+        }
+
+        @JavascriptInterface
+        public String getVersionInfo() {
+            JSONObject info = new JSONObject();
+            try {
+                info.put("packageName", getPackageName());
+                info.put("versionCode", BuildConfig.VERSION_CODE);
+                info.put("versionName", BuildConfig.VERSION_NAME);
+                info.put("updateCapable", true);
+            } catch (JSONException ignored) {
+                return "{}";
+            }
+            return info.toString();
+        }
+    }
+
+    private static final class UpdateInfo {
+        final String packageName;
+        final int versionCode;
+        final String versionName;
+        final int minimumVersionCode;
+        final boolean required;
+        final String apkUrl;
+        final String sha256;
+
+        private UpdateInfo(
+            String packageName,
+            int versionCode,
+            String versionName,
+            int minimumVersionCode,
+            boolean required,
+            String apkUrl,
+            String sha256
+        ) {
+            this.packageName = packageName;
+            this.versionCode = versionCode;
+            this.versionName = versionName;
+            this.minimumVersionCode = minimumVersionCode;
+            this.required = required;
+            this.apkUrl = apkUrl;
+            this.sha256 = sha256;
+        }
+
+        static UpdateInfo fromJson(JSONObject object) {
+            int versionCode = object.optInt("versionCode", 0);
+            return new UpdateInfo(
+                object.optString("packageName", ""),
+                versionCode,
+                object.optString("versionName", String.valueOf(versionCode)),
+                object.optInt("minimumVersionCode", object.optInt("minVersionCode", versionCode)),
+                object.optBoolean("required", false),
+                object.optString("apkUrl", ""),
+                object.optString("sha256", "").trim().toLowerCase(Locale.US)
+            );
         }
     }
 }

@@ -54,6 +54,78 @@ test("Android APK build script publishes release artifacts and keeps debug local
   assert.match(script, /Copy-Item -LiteralPath \$builtApk -Destination \$finalApk -Force/);
 });
 
+test("Android updater manifest publishes the required release APK metadata", () => {
+  const manifest = readJson("android-update.json");
+
+  assert.equal(manifest.packageName, "com.twizzy.whosthatpokemon");
+  assert.equal(manifest.versionCode, 5);
+  assert.equal(manifest.versionName, "5.0");
+  assert.equal(manifest.minimumVersionCode, 5);
+  assert.equal(manifest.required, true);
+  assert.equal(
+    manifest.apkUrl,
+    "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
+  );
+  assert.match(manifest.sha256, /^[a-f0-9]{64}$/);
+});
+
+test("Android release build is versioned for the first boot-up updater client", () => {
+  const appGradle = readText("android/app/build.gradle");
+
+  assert.match(appGradle, /versionCode\s*=\s*5/);
+  assert.match(appGradle, /versionName\s*=\s*['"]5\.0['"]/);
+  assert.match(appGradle, /buildConfig\s*=\s*true/);
+});
+
+test("Android wrapper can install verified sideload APK updates", () => {
+  const manifest = readText("android/app/src/main/AndroidManifest.xml");
+  const providerPaths = readText("android/app/src/main/res/xml/apk_update_paths.xml");
+  const activity = readText("android/app/src/main/java/com/twizzy/whosthatpokemon/MainActivity.java");
+
+  assert.match(manifest, /android\.permission\.REQUEST_INSTALL_PACKAGES/);
+  assert.match(manifest, /androidx\.core\.content\.FileProvider/);
+  assert.match(manifest, /android:authorities="\$\{applicationId\}\.apkprovider"/);
+  assert.match(providerPaths, /<cache-path[^>]+path="updates\/"/);
+  assert.match(activity, /UPDATE_MANIFEST_URL/);
+  assert.match(activity, /android-update\.json/);
+  assert.match(activity, /MessageDigest\.getInstance\("SHA-256"\)/);
+  assert.match(activity, /getPackageArchiveInfo/);
+  assert.match(activity, /GET_SIGNING_CERTIFICATES/);
+  assert.match(activity, /EXPECTED_RELEASE_CERT_SHA256/);
+  assert.match(activity, /getLongVersionCode/);
+  assert.match(activity, /signingInfo/);
+  assert.match(activity, /FileProvider\.getUriForFile/);
+  assert.match(activity, /ACTION_INSTALL_PACKAGE/);
+  assert.match(activity, /application\/vnd\.android\.package-archive/);
+  assert.match(activity, /canRequestPackageInstalls/);
+  assert.match(activity, /getVersionInfo\(\)/);
+  assert.match(activity, /BuildConfig\.VERSION_CODE/);
+});
+
+test("Android wrapper checks for required updates before loading the trusted WebView", () => {
+  const activity = readText("android/app/src/main/java/com/twizzy/whosthatpokemon/MainActivity.java");
+  const checkIndex = activity.indexOf("checkForUpdatesThenBoot()");
+  const loadIndex = activity.indexOf("webView.loadUrl(TRUSTED_APP_URL)");
+
+  assert.notEqual(checkIndex, -1);
+  assert.notEqual(loadIndex, -1);
+  assert.ok(checkIndex < loadIndex);
+});
+
+test("Android build script refreshes the update manifest from the signed release APK", () => {
+  const script = readText("tools/build-apk.ps1");
+
+  assert.match(script, /\$updateManifest/);
+  assert.match(script, /android-update\.json/);
+  assert.match(script, /Get-FileHash -Algorithm SHA256/);
+  assert.match(script, /minimumVersionCode/);
+  assert.match(script, /https:\/\/therealtwizzy\.github\.io\/whos-that-pokemon\/downloads\/whos-that-pokemon\.apk/);
+});
+
 function readText(relativePath) {
   return readFileSync(join(root, relativePath), "utf8");
+}
+
+function readJson(relativePath) {
+  return JSON.parse(readText(relativePath));
 }

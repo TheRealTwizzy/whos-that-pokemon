@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   createProgressStore,
   createLocalTrainerStore,
+  getNativeWrapperUpdateGate,
+  getNativeWrapperVersionInfo,
   mapGoogleLoginError,
   requestNativeGoogleIdToken,
   requestNativeSignOut,
@@ -269,6 +271,86 @@ test("treats native Android sign-out without a completion event as fire-and-forg
   } finally {
     restoreWindow();
   }
+});
+
+test("reads native Android wrapper version metadata from the bridge", () => {
+  assert.deepEqual(
+    getNativeWrapperVersionInfo({
+      getVersionInfo() {
+        return JSON.stringify({
+          packageName: "com.twizzy.whosthatpokemon",
+          versionCode: 5,
+          versionName: "5.0",
+          updateCapable: true,
+        });
+      },
+    }),
+    {
+      packageName: "com.twizzy.whosthatpokemon",
+      versionCode: 5,
+      versionName: "5.0",
+      updateCapable: true,
+    },
+  );
+
+  assert.equal(getNativeWrapperVersionInfo({ signIn() {} }), null);
+});
+
+test("blocks legacy native Android wrappers before login while leaving browsers alone", () => {
+  const updateManifest = {
+    versionCode: 5,
+    versionName: "5.0",
+    minimumVersionCode: 5,
+    required: true,
+    apkUrl: "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
+    sha256: "a".repeat(64),
+  };
+
+  assert.deepEqual(
+    getNativeWrapperUpdateGate({
+      nativeAuth: { signIn() {} },
+      updateManifest,
+    }),
+    {
+      required: true,
+      currentVersionCode: 0,
+      currentVersionName: "",
+      latestVersionCode: 5,
+      latestVersionName: "5.0",
+      minimumVersionCode: 5,
+      apkUrl: "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
+      sha256: "a".repeat(64),
+      reason: "native-wrapper-outdated",
+    },
+  );
+
+  assert.equal(
+    getNativeWrapperUpdateGate({
+      nativeAuth: null,
+      nativeWrapperDetected: false,
+      updateManifest,
+    }).required,
+    false,
+  );
+});
+
+test("blocks old Android WebView wrappers that do not expose a native bridge", () => {
+  const gate = getNativeWrapperUpdateGate({
+    nativeAuth: null,
+    nativeWrapperDetected: true,
+    updateManifest: {
+      versionCode: 5,
+      versionName: "5.0",
+      minimumVersionCode: 5,
+      required: true,
+      apkUrl: "downloads/whos-that-pokemon.apk",
+      sha256: "",
+    },
+  });
+
+  assert.equal(gate.required, true);
+  assert.equal(gate.currentVersionCode, 0);
+  assert.equal(gate.reason, "native-wrapper-outdated");
 });
 
 test("signs into web Firebase with the Google ID token returned by native Android", async () => {

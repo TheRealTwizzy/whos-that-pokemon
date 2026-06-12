@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "pokedex-trainer-os-";
-const CACHE_NAME = `${CACHE_PREFIX}v4`;
+const CACHE_NAME = `${CACHE_PREFIX}v5`;
 const APP_SHELL = [
   "./",
   "./index.html",

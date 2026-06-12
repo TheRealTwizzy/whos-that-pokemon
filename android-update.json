@@ -1,0 +1,9 @@
+{
+    "packageName":  "com.twizzy.whosthatpokemon",
+    "versionCode":  5,
+    "versionName":  "5.0",
+    "minimumVersionCode":  5,
+    "required":  true,
+    "apkUrl":  "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk",
+    "sha256":  "f1ccef1fa286711f265917ddd9d0ec4e9f79d452d24bd9969353e4a3b903dab7"
+}

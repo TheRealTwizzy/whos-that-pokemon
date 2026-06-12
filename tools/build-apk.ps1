@@ -10,6 +10,8 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $androidRoot = Join-Path $root "android"
 $downloads = Join-Path $root "downloads"
 $finalApk = Join-Path $downloads "whos-that-pokemon.apk"
+$updateManifestPath = Join-Path $root "android-update.json"
+$publicApkUrl = "https://therealtwizzy.github.io/whos-that-pokemon/downloads/whos-that-pokemon.apk"
 $gradleVersion = "8.13"
 $releaseSigningFile = Join-Path $androidRoot "release-signing.properties"
 $releaseSigningProperties = @{}
@@ -35,6 +37,25 @@ function Get-SigningValue {
     }
 
     return ""
+}
+
+function Get-AndroidAppVersion {
+    $appGradle = Join-Path $androidRoot "app\build.gradle"
+    $gradleText = Get-Content -LiteralPath $appGradle -Raw
+    $versionCodeMatch = [regex]::Match($gradleText, "versionCode\s*=\s*(\d+)")
+    $versionNameMatch = [regex]::Match($gradleText, "versionName\s*=\s*['""]([^'""]+)['""]")
+
+    if (-not $versionCodeMatch.Success) {
+        throw "Could not read Android versionCode from $appGradle."
+    }
+    if (-not $versionNameMatch.Success) {
+        throw "Could not read Android versionName from $appGradle."
+    }
+
+    return [pscustomobject]@{
+        VersionCode = [int] $versionCodeMatch.Groups[1].Value
+        VersionName = $versionNameMatch.Groups[1].Value
+    }
 }
 
 $androidHome = $env:ANDROID_HOME
@@ -155,7 +176,22 @@ if (-not (Test-Path $builtApk)) {
 
 if ($Variant -eq "Release") {
     Copy-Item -LiteralPath $builtApk -Destination $finalApk -Force
+    $appVersion = Get-AndroidAppVersion
+    $apkSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $finalApk).Hash.ToLowerInvariant()
+    $updateManifest = [ordered]@{
+        packageName = "com.twizzy.whosthatpokemon"
+        versionCode = $appVersion.VersionCode
+        versionName = $appVersion.VersionName
+        minimumVersionCode = $appVersion.VersionCode
+        required = $true
+        apkUrl = $publicApkUrl
+        sha256 = $apkSha256
+    }
+    $updateManifestJson = ($updateManifest | ConvertTo-Json -Depth 3) + [Environment]::NewLine
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($updateManifestPath, $updateManifestJson, $utf8NoBom)
     Write-Host "Built release APK: $finalApk"
+    Write-Host "Updated Android updater manifest: $updateManifestPath"
 } else {
     Write-Host "Built local debug APK: $builtApk"
     Write-Host "Debug builds do not overwrite the public downloads\whos-that-pokemon.apk artifact."

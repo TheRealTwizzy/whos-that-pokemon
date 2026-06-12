@@ -10,6 +10,7 @@ const LOCAL_TRAINER_PERSONAL_SCORES_PREFIX = "pokemonQuiz.localTrainerPersonalSc
 const LOCAL_TRAINER_PREFERENCES_PREFIX = "pokemonQuiz.localTrainerPreferences.v1.";
 const NATIVE_AUTH_RESULT_EVENT = "poke-native-auth-result";
 const NATIVE_SIGN_OUT_RESULT_EVENT = "poke-native-signout-result";
+export const MIN_NATIVE_WRAPPER_VERSION_CODE = 5;
 
 let nativeAuthRequestCounter = 0;
 
@@ -151,6 +152,58 @@ export function getNativeAuthBridge() {
 
 export function isNativeAuthBridgeAvailable(nativeAuth = getNativeAuthBridge()) {
   return Boolean(nativeAuth && typeof nativeAuth.signIn === "function");
+}
+
+export function getNativeWrapperVersionInfo(nativeAuth = getNativeAuthBridge()) {
+  if (!nativeAuth || typeof nativeAuth.getVersionInfo !== "function") return null;
+
+  try {
+    const raw = nativeAuth.getVersionInfo();
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const versionCode = toPositiveInteger(parsed?.versionCode, 0);
+    if (!versionCode) return null;
+
+    return {
+      packageName: String(parsed?.packageName || ""),
+      versionCode,
+      versionName: String(parsed?.versionName || ""),
+      updateCapable: Boolean(parsed?.updateCapable),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function getNativeWrapperUpdateGate({
+  nativeAuth = getNativeAuthBridge(),
+  nativeWrapperDetected = isNativeAuthBridgeAvailable(nativeAuth),
+  updateManifest = null,
+  minimumVersionCode = MIN_NATIVE_WRAPPER_VERSION_CODE,
+} = {}) {
+  const versionInfo = getNativeWrapperVersionInfo(nativeAuth);
+  const latestVersionCode = toPositiveInteger(updateManifest?.versionCode, minimumVersionCode);
+  const resolvedMinimumVersionCode = toPositiveInteger(
+    updateManifest?.minimumVersionCode ?? updateManifest?.minVersionCode,
+    minimumVersionCode,
+  );
+  const currentVersionCode = versionInfo?.versionCode ?? (nativeWrapperDetected ? 0 : resolvedMinimumVersionCode);
+  const required = Boolean(
+    nativeWrapperDetected &&
+      (currentVersionCode < resolvedMinimumVersionCode ||
+        (updateManifest?.required === true && currentVersionCode < latestVersionCode)),
+  );
+
+  return {
+    required,
+    currentVersionCode,
+    currentVersionName: versionInfo?.versionName ?? "",
+    latestVersionCode,
+    latestVersionName: String(updateManifest?.versionName || ""),
+    minimumVersionCode: resolvedMinimumVersionCode,
+    apkUrl: String(updateManifest?.apkUrl || "downloads/whos-that-pokemon.apk"),
+    sha256: String(updateManifest?.sha256 || ""),
+    reason: required ? "native-wrapper-outdated" : "",
+  };
 }
 
 export function requestNativeGoogleIdToken(nativeAuth = getNativeAuthBridge(), options = {}) {
@@ -874,6 +927,11 @@ function withTimeout(promise, timeoutMs) {
   return Promise.race([promise, timeout]).finally(() => {
     globalThis.clearTimeout(timeoutId);
   });
+}
+
+function toPositiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
 function readLocalIds() {
