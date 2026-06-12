@@ -66,30 +66,50 @@ body {
   min-width: 320px;
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .device-stage {
+  position: relative;
   height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   justify-items: center;
   align-items: start;
   overflow: hidden;
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
 }
 
 .device-stage.fit-device {
   height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   justify-items: start;
 }
 
 .device-stage.fit-device .pokedex-device {
+  position: absolute;
+  left: var(--device-offset-x, 0px);
+  top: var(--device-offset-y, 0px);
   width: 1180px;
-  margin-left: var(--device-offset-x, 0px);
-  margin-top: var(--device-offset-y, 0px);
+  margin: 0;
   transform:
     rotate(var(--device-rotation, 0deg))
     scale(var(--device-scale, 1));
@@ -100,6 +120,8 @@ button,
 input,
 select {
   font: inherit;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 button,
@@ -189,13 +211,14 @@ html.lcd-only-mode .device-stage {
 }
 
 html.lcd-only-mode .device-stage.fit-device .pokedex-device {
+  position: absolute !important;
+  left: var(--device-offset-x, 0px) !important;
+  top: var(--device-offset-y, 0px) !important;
   width: var(--lcd-shell-width, 100vw) !important;
   height: 100vh;
   height: var(--lcd-shell-height, 100vh);
   margin: 0 !important;
   padding: 0 !important;
-  margin-left: var(--device-offset-x, 0px) !important;
-  margin-top: var(--device-offset-y, 0px) !important;
   transform:
     rotate(var(--device-rotation, 0deg))
     scale(var(--device-scale, 1)) !important;
@@ -2193,7 +2216,7 @@ label span,
   }
 }
 
-@media (orientation: landscape) and (max-height: 620px), (orientation: landscape) and (max-width: 980px) {
+@media (max-height: 620px), (max-width: 980px) {
   .device-stage.fit-device {
     align-items: start;
     justify-items: center;
@@ -2310,4 +2333,44 @@ label span,
   .device-stage.fit-device .dex-entry-meta {
     grid-column: auto;
   }
+}
+
+html.lcd-only-mode .screen-bezel {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  padding: 0 !important;
+}
+
+html.lcd-only-mode .workspace,
+html.lcd-only-mode .lock-screen {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  margin: 0 !important;
+  aspect-ratio: auto !important;
+}
+
+html.lcd-only-mode .lock-screen {
+  grid-template-columns: minmax(150px, 0.65fr) minmax(0, 1.35fr) !important;
+  padding: clamp(16px, 3vw, 28px) !important;
+}
+
+html.lcd-only-mode .login-actions,
+html.lcd-only-mode .trainer-profile-list {
+  grid-column: 2 !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+html.lcd-only-mode .register-form {
+  grid-column: 2 !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+}
+
+html.lcd-only-mode .workspace {
+  grid-template-columns: minmax(126px, 168px) minmax(0, 1fr) !important;
+}
+
+html.lcd-only-mode .workspace[data-os-state="menu"] {
+  grid-template-columns: minmax(180px, 260px) !important;
 }

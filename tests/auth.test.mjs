@@ -177,8 +177,8 @@ test("maps disallowed Google user agents to a local-friendly retry state", () =>
       message: "This operation is not supported.",
     }),
     {
-      status: "Google sign-in is not supported in this browser. Use Guest or a local Trainer ID here, or open the game in Chrome.",
-      redirectAllowed: false,
+      status: "Google popup sign-in is not supported here. Redirecting to Google login...",
+      redirectAllowed: true,
     },
   );
   assert.deepEqual(

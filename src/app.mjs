@@ -8,6 +8,7 @@ import {
   detectInputDeviceClass,
   getAccessGate,
   getAvailableQuestionOptions,
+  getFixedLandscapeTransform,
   getGoogleAuthEnvironmentStatus,
   getSpriteUrl,
   isAttemptSubmission,
@@ -28,6 +29,9 @@ const ART_TOGGLE_HOLD_MS = 420;
 
 if (location.href.startsWith("file:///android_asset/")) {
   document.documentElement.classList.add("native-app");
+}
+if (isStandaloneDisplayMode()) {
+  document.documentElement.classList.add("standalone-app");
 }
 
 const elements = {
@@ -104,6 +108,7 @@ const elements = {
 const googleAuthEnvironment = getGoogleAuthEnvironmentStatus({
   href: location.href,
   userAgent: navigator.userAgent,
+  standalone: isStandaloneDisplayMode(),
 });
 
 function getCurrentInputDeviceClass() {
@@ -147,13 +152,14 @@ const state = {
   menuExitArmedUntil: 0,
   soundEnabled: audio.enabled,
   bootComplete: false,
-  lcdOnlyMode: false,
+  lcdOnlyMode: shouldStartInLcdOnlyMode(),
   quizArtworkSource: "pixel",
   artToggleTimerId: 0,
 };
 
 let leaderboardRequestId = 0;
 let launchTimerId = 0;
+let fitFrameId = 0;
 let deferredInstallPrompt = null;
 
 const OS_APP_LABELS = {
@@ -240,6 +246,7 @@ function bindEvents() {
     playCue("launch");
     setLockStatus("Opening Google login...");
     void progressStore.signIn({
+      signInFlow: googleAuthEnvironment.signInFlow,
       allowRedirectFallback: googleAuthEnvironment.supported,
       timeoutMs: 30000,
     });
@@ -296,13 +303,15 @@ function bindEvents() {
   elements.artToggle.addEventListener("keydown", onArtToggleKeyDown);
   elements.artToggle.addEventListener("keyup", cancelArtToggleHold);
   document.addEventListener("keydown", onGameboyKeyDown);
-  window.addEventListener("resize", fitDeviceToViewport);
+  window.addEventListener("resize", scheduleFitDeviceToViewport);
   window.addEventListener("orientationchange", () => {
-    window.setTimeout(fitDeviceToViewport, 120);
+    window.setTimeout(scheduleFitDeviceToViewport, 120);
   });
   window.screen?.orientation?.addEventListener?.("change", () => {
-    window.setTimeout(fitDeviceToViewport, 80);
+    window.setTimeout(scheduleFitDeviceToViewport, 80);
   });
+  window.visualViewport?.addEventListener?.("resize", scheduleFitDeviceToViewport);
+  window.visualViewport?.addEventListener?.("scroll", scheduleFitDeviceToViewport);
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferredInstallPrompt = event;
@@ -355,8 +364,8 @@ async function init() {
   elements.soundEnabled.checked = state.soundEnabled;
   registerServiceWorker();
   renderAuth();
+  setLcdOnlyMode(state.lcdOnlyMode);
   updateDeviceShell();
-  fitDeviceToViewport();
   await progressStore.init();
   await ensureCatalogReady();
   if (isDeviceUnlocked()) setActiveView(state.activeView);
@@ -1563,27 +1572,28 @@ function fitDeviceToViewport() {
   if (!elements.deviceStage || !elements.appShell) return;
 
   elements.deviceStage.classList.add("fit-device");
-  const rotation = getAutoLandscapeRotation();
-  elements.deviceStage.classList.toggle("auto-rotate-landscape", rotation !== 0);
+  const viewport = getViewportSize();
+  const safeArea = getSafeAreaInsets();
+  const rotation = getShellRotation(viewport);
   elements.appShell.style.setProperty("--device-rotation", `${rotation}deg`);
 
   if (state.lcdOnlyMode) {
-    const logicalWidth = rotation === 0 ? window.innerWidth : window.innerHeight;
-    const logicalHeight = rotation === 0 ? window.innerHeight : window.innerWidth;
-    const offset = getRotatedOffset({
+    const shellWidth = Math.max(viewport.width, viewport.height);
+    const shellHeight = Math.min(viewport.width, viewport.height);
+    const transform = getFixedLandscapeTransform({
+      viewportWidth: viewport.width,
+      viewportHeight: viewport.height,
       rotation,
-      width: logicalWidth,
-      height: logicalHeight,
-      scale: 1,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
+      shellWidth,
+      shellHeight,
+      ...safeArea,
     });
-    elements.appShell.style.setProperty("--lcd-shell-width", `${logicalWidth}px`);
-    elements.appShell.style.setProperty("--lcd-shell-height", `${logicalHeight}px`);
-    elements.appShell.style.setProperty("--device-scale", "1");
-    elements.appShell.style.setProperty("--device-offset-x", `${offset.x}px`);
-    elements.appShell.style.setProperty("--device-offset-y", `${offset.y}px`);
-    elements.deviceStage.style.setProperty("--fitted-device-height", `${window.innerHeight}px`);
+    elements.appShell.style.setProperty("--lcd-shell-width", `${shellWidth}px`);
+    elements.appShell.style.setProperty("--lcd-shell-height", `${shellHeight}px`);
+    elements.appShell.style.setProperty("--device-scale", String(transform.scale));
+    elements.appShell.style.setProperty("--device-offset-x", `${transform.offsetX}px`);
+    elements.appShell.style.setProperty("--device-offset-y", `${transform.offsetY}px`);
+    elements.deviceStage.style.setProperty("--fitted-device-height", `${transform.stageHeight}px`);
     return;
   }
 
@@ -1595,40 +1605,84 @@ function fitDeviceToViewport() {
   elements.appShell.style.setProperty("--device-rotation", "0deg");
   const rect = elements.appShell.getBoundingClientRect();
   elements.appShell.style.setProperty("--device-rotation", `${rotation}deg`);
-  const availableWidth = Math.max(320, window.innerWidth - 10);
-  const availableHeight = Math.max(240, window.innerHeight - 10);
-  const rotated = rotation !== 0;
-  const fittedWidth = rotated ? rect.height : rect.width;
-  const fittedHeight = rotated ? rect.width : rect.height;
-  const scale = Math.max(0.25, Math.min(1, availableWidth / Math.max(1, fittedWidth), availableHeight / Math.max(1, fittedHeight)));
-  const offset = getRotatedOffset({
+  const transform = getFixedLandscapeTransform({
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
+    shellWidth: rect.width,
+    shellHeight: rect.height,
     rotation,
-    width: rect.width,
-    height: rect.height,
-    scale,
-    viewportWidth: window.innerWidth,
-    viewportHeight: window.innerHeight,
+    ...safeArea,
   });
 
-  elements.appShell.style.setProperty("--device-scale", scale.toFixed(4));
-  elements.appShell.style.setProperty("--device-offset-x", `${offset.x}px`);
-  elements.appShell.style.setProperty("--device-offset-y", `${offset.y}px`);
-  elements.deviceStage.style.setProperty("--fitted-device-height", `${Math.ceil(fittedHeight * scale)}px`);
+  elements.appShell.style.setProperty("--device-scale", String(transform.scale));
+  elements.appShell.style.setProperty("--device-offset-x", `${transform.offsetX}px`);
+  elements.appShell.style.setProperty("--device-offset-y", `${transform.offsetY}px`);
+  elements.deviceStage.style.setProperty("--fitted-device-height", `${transform.stageHeight}px`);
 }
 
-function getAutoLandscapeRotation() {
-  if (!shouldAutoRotateToLandscape()) return 0;
+function scheduleFitDeviceToViewport() {
+  if (fitFrameId) return;
+  const requestFrame = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 16));
+  fitFrameId = requestFrame(() => {
+    fitFrameId = 0;
+    fitDeviceToViewport();
+  });
+}
+
+function getShellRotation(viewport = getViewportSize()) {
+  if (!shouldUseFixedLandscapeRotation(viewport)) return 0;
+  if (viewport.height <= viewport.width) return 0;
   const angle = getViewportOrientationAngle();
   return angle === 180 || angle === 270 ? -90 : 90;
 }
 
-function shouldAutoRotateToLandscape() {
-  const portraitViewport = window.innerHeight > window.innerWidth;
-  if (!portraitViewport) return false;
-  return document.documentElement.classList.contains("native-app") ||
-    window.matchMedia?.("(pointer: coarse)")?.matches ||
-    navigator.maxTouchPoints > 0 ||
-    window.innerWidth <= 760;
+function shouldUseFixedLandscapeRotation(viewport = getViewportSize()) {
+  return Boolean(
+    document.documentElement.classList.contains("native-app") ||
+      isStandaloneDisplayMode() ||
+      isMobileAppViewport(viewport),
+  );
+}
+
+function getViewportSize() {
+  return {
+    width: Math.max(1, Math.round(window.visualViewport?.width || window.innerWidth || 1)),
+    height: Math.max(1, Math.round(window.visualViewport?.height || window.innerHeight || 1)),
+  };
+}
+
+function isStandaloneDisplayMode() {
+  return Boolean(
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.matchMedia?.("(display-mode: fullscreen)")?.matches ||
+    window.navigator?.standalone,
+  );
+}
+
+function shouldStartInLcdOnlyMode() {
+  const viewport = getViewportSize();
+  return Boolean(isStandaloneDisplayMode() || isMobileAppViewport(viewport));
+}
+
+function isMobileAppViewport(viewport = getViewportSize()) {
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
+  const mobileSized = Math.min(viewport.width, viewport.height) <= 620 || Math.max(viewport.width, viewport.height) <= 980;
+  return Boolean(coarsePointer || navigator.maxTouchPoints > 0 || mobileSized);
+}
+
+function getSafeAreaInsets() {
+  const style = getComputedStyle(elements.deviceStage);
+  return {
+    safeAreaTop: parseCssPixels(style.paddingTop),
+    safeAreaRight: parseCssPixels(style.paddingRight),
+    safeAreaBottom: parseCssPixels(style.paddingBottom),
+    safeAreaLeft: parseCssPixels(style.paddingLeft),
+  };
+}
+
+function parseCssPixels(value) {
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
 }
 
 function getViewportOrientationAngle() {
@@ -1636,33 +1690,6 @@ function getViewportOrientationAngle() {
     ? window.screen.orientation.angle
     : Number(window.orientation || 0);
   return ((Math.round(rawAngle / 90) * 90) % 360 + 360) % 360;
-}
-
-function getRotatedOffset({ rotation, width, height, scale, viewportWidth, viewportHeight }) {
-  const normalizedRotation = Number(rotation) || 0;
-  const rotatedWidth = normalizedRotation === 0 ? width * scale : height * scale;
-  const rotatedHeight = normalizedRotation === 0 ? height * scale : width * scale;
-  const centeredX = Math.max(0, Math.floor((viewportWidth - rotatedWidth) / 2));
-  const centeredY = Math.max(0, Math.floor((viewportHeight - rotatedHeight) / 2));
-
-  if (normalizedRotation > 0) {
-    return {
-      x: Math.floor(centeredX + height * scale),
-      y: centeredY,
-    };
-  }
-
-  if (normalizedRotation < 0) {
-    return {
-      x: centeredX,
-      y: Math.floor(centeredY + width * scale),
-    };
-  }
-
-  return {
-    x: centeredX,
-    y: centeredY,
-  };
 }
 
 function completeBoot() {

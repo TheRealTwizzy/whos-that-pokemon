@@ -102,9 +102,8 @@ export function mapGoogleLoginError(error) {
 
   if (code === "auth/operation-not-supported-in-this-environment") {
     return {
-      status:
-        "Google sign-in is not supported in this browser. Use Guest or a local Trainer ID here, or open the game in Chrome.",
-      redirectAllowed: false,
+      status: "Google popup sign-in is not supported here. Redirecting to Google login...",
+      redirectAllowed: true,
     };
   }
 
@@ -249,6 +248,16 @@ export function createProgressStore(onChange = () => {}, options = {}) {
       state.authPending = true;
       state.status = "Opening Google login...";
       emit();
+
+      if (options.signInFlow === "redirect") {
+        await firebase.authModule.signInWithRedirect(firebase.auth, firebase.provider).catch((redirectError) => {
+          state.authPending = false;
+          state.status = mapGoogleLoginError(redirectError).status;
+          emit();
+        });
+        return;
+      }
+
       const credential = await withTimeout(
         firebase.authModule.signInWithPopup(firebase.auth, firebase.provider),
         options.timeoutMs ?? 30000,
@@ -270,6 +279,7 @@ export function createProgressStore(onChange = () => {}, options = {}) {
         state.status = mapped.status;
         emit();
         await firebase.authModule.signInWithRedirect(firebase.auth, firebase.provider).catch((redirectError) => {
+          state.authPending = false;
           state.status = mapGoogleLoginError(redirectError).status;
           emit();
         });

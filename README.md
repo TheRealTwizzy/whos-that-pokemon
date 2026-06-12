@@ -127,6 +127,16 @@ therefore treats Google Auth as unavailable and keeps Guest/local Trainer play
 usable. Native Android Google login is a future milestone; it should use a
 platform-supported auth flow instead of WebView OAuth.
 
+Mobile browser Google login uses the web app config in `firebase-config.js`, not
+Android's `google-services.json`. The hosted site must be opened from an HTTPS
+browser origin listed in Firebase Authentication authorized domains.
+
+If you download `google-services.json` from Firebase, keep it with the Android
+project and move it to your development machine when a native Android auth
+bridge is added. It belongs at `android/app/google-services.json` in a
+Gradle-based Android project, but this repository's current APK script compiles
+a tiny Java WebView directly with Android SDK tools and does not read that file.
+
 ## Tests
 
 Run the pure quiz logic tests with:
@@ -142,6 +152,11 @@ Pages site. It needs internet access for the app, PokéAPI data, and sprites.
 The WebView APK uses Guest or local Trainer profiles for progress today.
 Firebase/Google progress sync is available in supported browsers until native
 Android Google login is implemented as a separate milestone.
+
+The wrapper is locked to landscape sensor orientations and runs fullscreen so it
+does not show Android status/navigation bars during play. Google account login
+still needs the supported mobile browser path unless the Android project is
+upgraded to native Firebase/Google auth with a JavaScript bridge.
 
 Build the signed APK locally with:
 

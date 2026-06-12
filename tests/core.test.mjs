@@ -7,6 +7,7 @@ import {
   buildLeaderboardKey,
   buildQuizPool,
   detectInputDeviceClass,
+  getFixedLandscapeTransform,
   getAccessGate,
   getAvailableQuestionOptions,
   getGoogleAuthEnvironmentStatus,
@@ -459,6 +460,7 @@ test("detects embedded WebView environments that cannot run Google OAuth", () =>
     {
       supported: false,
       reason: "embedded-webview",
+      signInFlow: "blocked",
       message: "Google sign-in is available in Chrome. Use Guest or a local Trainer ID in this app.",
     },
   );
@@ -470,6 +472,7 @@ test("detects embedded WebView environments that cannot run Google OAuth", () =>
     {
       supported: false,
       reason: "native-asset",
+      signInFlow: "blocked",
       message: "Google sign-in is available in Chrome. Use Guest or a local Trainer ID in this app.",
     },
   );
@@ -481,7 +484,21 @@ test("detects embedded WebView environments that cannot run Google OAuth", () =>
     {
       supported: false,
       reason: "embedded-webview",
+      signInFlow: "blocked",
       message: "Google sign-in is available in Chrome. Use Guest or a local Trainer ID in this app.",
+    },
+  );
+  assert.deepEqual(
+    getGoogleAuthEnvironmentStatus({
+      href: "https://therealtwizzy.github.io/whos-that-pokemon/",
+      userAgent: iosWebViewUserAgent,
+      standalone: true,
+    }),
+    {
+      supported: true,
+      reason: "standalone-browser",
+      signInFlow: "popup",
+      message: "Google sign-in is available.",
     },
   );
   assert.deepEqual(
@@ -492,9 +509,72 @@ test("detects embedded WebView environments that cannot run Google OAuth", () =>
     {
       supported: true,
       reason: "supported-browser",
+      signInFlow: "popup",
       message: "Google sign-in is available.",
     },
   );
+  assert.deepEqual(
+    getGoogleAuthEnvironmentStatus({
+      href: "http://example.com/whos-that-pokemon/",
+      userAgent: chromeUserAgent,
+    }),
+    {
+      supported: false,
+      reason: "insecure-origin",
+      signInFlow: "blocked",
+      message: "Google sign-in needs HTTPS. Use the hosted app or localhost for testing.",
+    },
+  );
+  assert.deepEqual(
+    getGoogleAuthEnvironmentStatus({
+      href: "http://localhost.evil.com/whos-that-pokemon/",
+      userAgent: chromeUserAgent,
+    }),
+    {
+      supported: false,
+      reason: "insecure-origin",
+      signInFlow: "blocked",
+      message: "Google sign-in needs HTTPS. Use the hosted app or localhost for testing.",
+    },
+  );
+  assert.deepEqual(
+    getGoogleAuthEnvironmentStatus({
+      href: "http://127.0.0.1.evil.com/whos-that-pokemon/",
+      userAgent: chromeUserAgent,
+    }),
+    {
+      supported: false,
+      reason: "insecure-origin",
+      signInFlow: "blocked",
+      message: "Google sign-in needs HTTPS. Use the hosted app or localhost for testing.",
+    },
+  );
+});
+
+test("keeps mobile shell scale stable while rotating a fixed landscape UI", () => {
+  const shell = { shellWidth: 1180, shellHeight: 740 };
+  const portrait = getFixedLandscapeTransform({
+    ...shell,
+    viewportWidth: 390,
+    viewportHeight: 844,
+    rotation: 90,
+  });
+  const landscape = getFixedLandscapeTransform({
+    ...shell,
+    viewportWidth: 844,
+    viewportHeight: 390,
+    rotation: 0,
+  });
+
+  assert.equal(portrait.rotation, 90);
+  assert.equal(landscape.rotation, 0);
+  assert.equal(portrait.scale, landscape.scale);
+  assert.equal(portrait.stageHeight, 844);
+  assert.equal(landscape.stageHeight, 390);
+  assert.equal(portrait.offsetX > 0, true);
+  assert.equal(portrait.offsetY >= 0, true);
+  assert.equal(landscape.offsetX >= 0, true);
+  assert.equal(landscape.offsetY >= 0, true);
 });
 
 test("normalizes structured Pokedex data into a quiz catalog with log entries", () => {

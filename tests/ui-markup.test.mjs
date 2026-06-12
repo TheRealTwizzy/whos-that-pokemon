@@ -6,6 +6,11 @@ const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8"
 const stylesCss = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appJs = readFileSync(new URL("../src/app.mjs", import.meta.url), "utf8");
 const manifestJson = JSON.parse(readFileSync(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
+const androidManifest = readFileSync(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
+const androidMainActivity = readFileSync(
+  new URL("../android/app/src/main/java/com/twizzy/whosthatpokemon/MainActivity.java", import.meta.url),
+  "utf8",
+);
 
 test("PokeDex shell does not render emulated hardware controls or stylus UI", () => {
   assert.equal(indexHtml.includes("data-hardware-action"), false);
@@ -44,14 +49,37 @@ test("PokeOS contains account, install, fullscreen, and rights surfaces", () => 
 
 test("site exposes an installable mobile web app manifest", () => {
   assert.equal(indexHtml.includes('rel="manifest"'), true);
+  assert.equal(indexHtml.includes("viewport-fit=cover"), true);
   assert.equal(manifestJson.display, "standalone");
+  assert.deepEqual(manifestJson.display_override, ["fullscreen", "standalone"]);
   assert.equal(manifestJson.orientation, "landscape");
   assert.equal(manifestJson.icons.some((icon) => icon.src === "icons/pokedex-icon.svg"), true);
 });
 
 test("mobile portrait uses auto-rotation instead of an orientation gate", () => {
-  assert.equal(appJs.includes("getAutoLandscapeRotation"), true);
-  assert.equal(appJs.includes("shouldAutoRotateToLandscape"), true);
-  assert.equal(appJs.includes("auto-rotate-landscape"), true);
+  assert.equal(appJs.includes("getFixedLandscapeTransform"), true);
+  assert.equal(appJs.includes("getShellRotation"), true);
+  assert.equal(appJs.includes("function shouldUseFixedLandscapeRotation"), true);
+  assert.equal(appJs.includes("function isMobileAppViewport"), true);
+  assert.equal(appJs.includes("function getSafeAreaInsets"), true);
+  assert.equal(appJs.includes("safeAreaTop: parseCssPixels(style.paddingTop)"), true);
+  assert.equal(appJs.includes("lcdOnlyMode: shouldStartInLcdOnlyMode()"), true);
+  assert.equal(appJs.includes("function shouldStartInLcdOnlyMode()"), true);
+  assert.equal(appJs.includes("scheduleFitDeviceToViewport"), true);
+  assert.equal(appJs.includes("visualViewport?.addEventListener"), true);
   assert.equal(stylesCss.includes("var(--device-rotation, 0deg)"), true);
+  assert.equal(stylesCss.includes("left: var(--device-offset-x, 0px)"), true);
+  assert.equal(stylesCss.includes("html.lcd-only-mode .lock-screen"), true);
+  assert.equal(stylesCss.includes("grid-template-columns: minmax(150px, 0.65fr) minmax(0, 1.35fr) !important;"), true);
+  assert.equal(stylesCss.includes("100dvh"), true);
+  assert.equal(stylesCss.includes("overscroll-behavior: none"), true);
+  assert.equal(stylesCss.includes("@media (orientation: landscape) and (max-height: 620px)"), false);
+});
+
+test("Android wrapper uses fullscreen landscape app chrome", () => {
+  assert.equal(androidManifest.includes('android:screenOrientation="sensorLandscape"'), true);
+  assert.equal(androidMainActivity.includes("SCREEN_ORIENTATION_SENSOR_LANDSCAPE"), true);
+  assert.equal(androidMainActivity.includes("hideSystemUi()"), true);
+  assert.equal(androidMainActivity.includes("WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars()"), true);
+  assert.equal(androidMainActivity.includes("SYSTEM_UI_FLAG_IMMERSIVE_STICKY"), true);
 });

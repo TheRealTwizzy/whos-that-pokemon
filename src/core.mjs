@@ -302,6 +302,65 @@ export function detectInputDeviceClass({ pointer = "", maxTouchPoints = 0, userA
   return "keyboard";
 }
 
+export function getFixedLandscapeTransform({
+  viewportWidth = 0,
+  viewportHeight = 0,
+  shellWidth = 1,
+  shellHeight = 1,
+  rotation = 0,
+  safeAreaTop = 0,
+  safeAreaRight = 0,
+  safeAreaBottom = 0,
+  safeAreaLeft = 0,
+} = {}) {
+  const width = Math.max(1, Number(viewportWidth) || 0);
+  const height = Math.max(1, Number(viewportHeight) || 0);
+  const usableWidth = Math.max(1, width - Math.max(0, Number(safeAreaLeft) || 0) - Math.max(0, Number(safeAreaRight) || 0));
+  const usableHeight = Math.max(1, height - Math.max(0, Number(safeAreaTop) || 0) - Math.max(0, Number(safeAreaBottom) || 0));
+  const landscapeWidth = Math.max(1, Number(shellWidth) || 0);
+  const landscapeHeight = Math.max(1, Number(shellHeight) || 0);
+  const normalizedRotation = normalizeQuarterTurn(rotation);
+  const longViewportSide = Math.max(usableWidth, usableHeight);
+  const shortViewportSide = Math.min(usableWidth, usableHeight);
+  const scale = Math.max(
+    0.25,
+    Math.min(1, longViewportSide / landscapeWidth, shortViewportSide / landscapeHeight),
+  );
+  const rotated = normalizedRotation !== 0;
+  const fittedWidth = (rotated ? landscapeHeight : landscapeWidth) * scale;
+  const fittedHeight = (rotated ? landscapeWidth : landscapeHeight) * scale;
+  const centeredX = Math.max(0, Math.floor((usableWidth - fittedWidth) / 2) + Math.max(0, Number(safeAreaLeft) || 0));
+  const centeredY = Math.max(0, Math.floor((usableHeight - fittedHeight) / 2) + Math.max(0, Number(safeAreaTop) || 0));
+
+  if (normalizedRotation > 0) {
+    return {
+      rotation: normalizedRotation,
+      scale: Number(scale.toFixed(4)),
+      offsetX: Math.floor(centeredX + landscapeHeight * scale),
+      offsetY: centeredY,
+      stageHeight: height,
+    };
+  }
+
+  if (normalizedRotation < 0) {
+    return {
+      rotation: normalizedRotation,
+      scale: Number(scale.toFixed(4)),
+      offsetX: centeredX,
+      offsetY: Math.floor(centeredY + landscapeWidth * scale),
+      stageHeight: height,
+    };
+  }
+
+  return {
+    rotation: 0,
+    scale: Number(scale.toFixed(4)),
+    offsetX: centeredX,
+    offsetY: centeredY,
+    stageHeight: height,
+  };
+}
+
 export function buildAutofillSuggestions(query, pool, { limit = 3 } = {}) {
   const normalizedQuery = normalizeAnswer(query);
   if (normalizedQuery.length < 2 || !Array.isArray(pool)) return [];
@@ -483,9 +542,10 @@ export function getAccessGate(progress) {
   };
 }
 
-export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "" } = {}) {
+export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "", standalone = false } = {}) {
   const normalizedHref = String(href).toLowerCase();
   const normalizedUserAgent = String(userAgent).toLowerCase();
+  const parsedOrigin = parseAuthOrigin(normalizedHref);
   const blockedMessage =
     "Google sign-in is available in Chrome. Use Guest or a local Trainer ID in this app.";
 
@@ -493,7 +553,27 @@ export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "" } = {
     return {
       supported: false,
       reason: "native-asset",
+      signInFlow: "blocked",
       message: blockedMessage,
+    };
+  }
+
+  const localhostHttp = parsedOrigin.protocol === "http:" && isLoopbackHost(parsedOrigin.hostname);
+  if (parsedOrigin.protocol === "http:" && !localhostHttp) {
+    return {
+      supported: false,
+      reason: "insecure-origin",
+      signInFlow: "blocked",
+      message: "Google sign-in needs HTTPS. Use the hosted app or localhost for testing.",
+    };
+  }
+
+  if (standalone && parsedOrigin.protocol === "https:") {
+    return {
+      supported: true,
+      reason: "standalone-browser",
+      signInFlow: "popup",
+      message: "Google sign-in is available.",
     };
   }
 
@@ -523,6 +603,7 @@ export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "" } = {
     return {
       supported: false,
       reason: "embedded-webview",
+      signInFlow: "blocked",
       message: blockedMessage,
     };
   }
@@ -530,6 +611,7 @@ export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "" } = {
   return {
     supported: true,
     reason: "supported-browser",
+    signInFlow: "popup",
     message: "Google sign-in is available.",
   };
 }
@@ -807,6 +889,32 @@ function cleanAnswerStyle(value) {
 function cleanInputDeviceClass(value) {
   const normalized = cleanKeyPart(value || "keyboard");
   return INPUT_DEVICE_CLASSES.has(normalized) ? normalized : "keyboard";
+}
+
+function normalizeQuarterTurn(rotation) {
+  const rounded = Math.round((Number(rotation) || 0) / 90) * 90;
+  if (rounded === 90 || rounded === -270) return 90;
+  if (rounded === -90 || rounded === 270) return -90;
+  return 0;
+}
+
+function parseAuthOrigin(href) {
+  try {
+    const url = new URL(href);
+    return {
+      protocol: url.protocol,
+      hostname: url.hostname.toLowerCase(),
+    };
+  } catch {
+    return {
+      protocol: "",
+      hostname: "",
+    };
+  }
+}
+
+function isLoopbackHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
 }
 
 function cleanEnum(value, allowed, fallback) {
