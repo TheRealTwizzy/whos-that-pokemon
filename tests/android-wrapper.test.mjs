@@ -96,6 +96,11 @@ test("Android wrapper can install verified sideload APK updates", () => {
   assert.match(activity, /signingInfo/);
   assert.match(activity, /FileProvider\.getUriForFile/);
   assert.match(activity, /ACTION_INSTALL_PACKAGE/);
+  assert.match(activity, /INSTALL_UPDATE_REQUEST_CODE/);
+  assert.match(activity, /onActivityResult/);
+  assert.match(activity, /showInstallNotCompletedFallback/);
+  assert.match(activity, /ACTION_APPLICATION_DETAILS_SETTINGS/);
+  assert.match(activity, /Open App Settings/);
   assert.match(activity, /application\/vnd\.android\.package-archive/);
   assert.match(activity, /canRequestPackageInstalls/);
   assert.match(activity, /getVersionInfo\(\)/);

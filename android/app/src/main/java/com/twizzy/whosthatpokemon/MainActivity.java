@@ -80,6 +80,7 @@ public class MainActivity extends Activity {
     private static final String UPDATE_APK_NAME = "whos-that-pokemon-update.apk";
     private static final String EXPECTED_RELEASE_CERT_SHA256 = "11b887d0063a66446a2fafa1cd21902ec5ddd56315d78f33741754743aed53d0";
     private static final int NETWORK_TIMEOUT_MS = 15000;
+    private static final int INSTALL_UPDATE_REQUEST_CODE = 5005;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Executor mainExecutor = new Executor() {
@@ -123,6 +124,14 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         hideSystemUi();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == INSTALL_UPDATE_REQUEST_CODE && updateRequired && resultCode != RESULT_OK) {
+            showInstallNotCompletedFallback();
+        }
     }
 
     @Override
@@ -423,12 +432,34 @@ public class MainActivity extends Activity {
             installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             installIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
             setUpdateStatus("Install prompt opened. Approve the Android update to continue.");
-            startActivity(installIntent);
+            startActivityForResult(installIntent, INSTALL_UPDATE_REQUEST_CODE);
         } catch (ActivityNotFoundException error) {
             showUpdateDownloadFailure(error);
         } catch (RuntimeException error) {
             showUpdateDownloadFailure(error);
         }
+    }
+
+    private void showInstallNotCompletedFallback() {
+        updateRequired = true;
+        setUpdateStatus(
+            "If Android says App not installed, uninstall the old APK first. " +
+            "Then redownload and reinstall the latest APK from the site to prevent PokeOS version-mismatch."
+        );
+        configureUpdateAction("Open App Settings", true, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                openThisAppSettings();
+            }
+        });
+    }
+
+    private void openThisAppSettings() {
+        Intent settingsIntent = new Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:" + getPackageName())
+        );
+        startActivity(settingsIntent);
     }
 
     private void setUpdateStatus(String message) {

@@ -47,6 +47,7 @@ test("PokeOS contains account, install, fullscreen, and rights surfaces", () => 
   assert.equal(indexHtml.includes("downloads/whos-that-pokemon.apk"), true);
   assert.equal(indexHtml.includes('id="apk-reinstall-prompt"'), true);
   assert.equal(indexHtml.includes("uninstall the old APK"), true);
+  assert.equal(indexHtml.includes("App not installed"), true);
   assert.equal(indexHtml.includes("PokeOS version-mismatch"), true);
   assert.equal(indexHtml.includes("Nintendo/Creatures Inc./GAME FREAK inc."), true);
 });
