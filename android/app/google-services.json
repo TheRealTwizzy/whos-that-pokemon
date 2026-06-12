@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "481701103645",
+    "project_id": "whos-that-poke-quiz",
+    "storage_bucket": "whos-that-poke-quiz.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:481701103645:android:1112257809a00dfe2d9ef4",
+        "android_client_info": {
+          "package_name": "com.twizzy.whosthatpokemon"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "481701103645-jookugoreud938qap9rok5ilkiuqtfgn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtDdf3QwWlnJhTF3OBm3JnVVZsQSQHuWo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "481701103645-jookugoreud938qap9rok5ilkiuqtfgn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
