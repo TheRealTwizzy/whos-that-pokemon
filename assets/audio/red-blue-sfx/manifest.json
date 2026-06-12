@@ -1,0 +1,22 @@
+{
+  "source": "Pokémon Red/Blue general sound effects",
+  "basePath": "raw/",
+  "events": {
+    "cursor": "SFX_ARROW_TILES.wav",
+    "menu": "SFX_PRESS_AB.wav",
+    "select": "SFX_START_MENU.wav",
+    "launch": "SFX_TURN_ON_PC.wav",
+    "start": "SFX_POKEDEX_RATING.wav",
+    "scan": "SFX_SILPH_SCOPE.wav",
+    "confirm": "SFX_PRESS_AB.wav",
+    "correct": "SFX_DEX_PAGE_ADDED.wav",
+    "wrong": "SFX_DENIED.wav",
+    "deny": "SFX_DENIED.wav",
+    "quit": "SFX_SWITCH.wav",
+    "close": "SFX_TURN_OFF_PC.wav",
+    "next": "SFX_SWAP.wav",
+    "lock": "SFX_TURN_OFF_PC.wav",
+    "save": "SFX_SAVE.wav",
+    "complete": "SFX_CAUGHT_MON.wav"
+  }
+}

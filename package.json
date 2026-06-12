@@ -3,5 +3,8 @@
     "build:pokedex": "node scripts/build-pokedex-data.mjs",
     "validate:pokedex": "node scripts/validate-pokedex-data.mjs",
     "test": "node scripts/run-tests.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }

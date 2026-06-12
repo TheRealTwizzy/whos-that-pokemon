@@ -19,7 +19,16 @@ export const STANDARD_TYPES = [
   "fairy",
 ];
 
-const PUBLIC_LEADERBOARD_LENGTHS = new Set([25, 50, 150, 250]);
+const LEGACY_PUBLIC_LEADERBOARD_LENGTHS = new Set([25, 50, 150, 250]);
+const FIXED_QUESTION_COUNTS = [25, 50, 100];
+const PUBLIC_QUESTION_TOKENS = new Set(["25", "50", "100", "entire-generation"]);
+const QUESTION_TOKENS = new Set(["25", "50", "100", "entire-generation", "all-pokemon"]);
+const TRAINER_AVATAR_IDS = new Set([25, 133, 150, 448, 906]);
+const TRAINER_THEME_IDS = new Set(["classic", "ocean", "forest", "volt"]);
+const GUESS_MODES = new Set(["name", "type", "generation", "number"]);
+const ANSWER_STYLES = new Set(["typed", "choice"]);
+const PRESENTATIONS = new Set(["silhouette", "color"]);
+const INPUT_DEVICE_CLASSES = new Set(["keyboard", "touch"]);
 
 const NAME_EXCEPTIONS = new Map([
   ["farfetchd", "Farfetch'd"],
@@ -96,7 +105,7 @@ export function normalizePokedexCatalog(rawCatalog, { loadedAt = Date.now(), sou
     : rawCatalog?.pokemon ?? rawCatalog?.entries ?? [];
 
   if (!Array.isArray(rawPokemon)) {
-    throw new Error("PokeDex data must provide a pokemon or entries array.");
+    throw new Error("PokéDex data must provide a pokemon or entries array.");
   }
 
   const generationOverrides = readGenerationOverrides(rawCatalog?.generations);
@@ -169,6 +178,185 @@ export function getLengthCap({ mode, preset, custom, poolSize }) {
   return clamp(requested, 1, poolSize);
 }
 
+export function getTrainerPreferenceDefaults() {
+  return {
+    avatarId: 25,
+    themeId: "classic",
+    quizDefaults: {
+      generation: "all",
+      questions: "25",
+      answerStyle: "typed",
+      timed: false,
+      leaderboard: false,
+    },
+  };
+}
+
+export function normalizeTrainerPreferences(input, { poolSize = 1025 } = {}) {
+  const defaults = getTrainerPreferenceDefaults();
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const quizSource = source.quizDefaults && typeof source.quizDefaults === "object" && !Array.isArray(source.quizDefaults)
+    ? source.quizDefaults
+    : {};
+  const avatarId = Number(source.avatarId);
+  const themeId = String(source.themeId ?? defaults.themeId).trim().toLowerCase();
+  const generation = cleanGenerationChoice(quizSource.generation ?? defaults.quizDefaults.generation);
+  const safePoolSize = Math.max(0, Math.floor(Number(poolSize) || 0));
+  const requestedQuestions = quizSource.questions ?? getLegacyQuestionToken(quizSource);
+  const resolved = resolveQuizSettings({
+    generation,
+    questions: requestedQuestions,
+    answerStyle: quizSource.answerStyle,
+    timed: Boolean(quizSource.timed),
+    leaderboard: Boolean(quizSource.leaderboard),
+    poolSize: safePoolSize,
+  });
+
+  return {
+    avatarId: TRAINER_AVATAR_IDS.has(avatarId) ? avatarId : defaults.avatarId,
+    themeId: TRAINER_THEME_IDS.has(themeId) ? themeId : defaults.themeId,
+    quizDefaults: {
+      generation: resolved.generation,
+      questions: resolved.questionToken,
+      answerStyle: resolved.answerStyle,
+      timed: resolved.timed,
+      leaderboard: resolved.leaderboard,
+    },
+  };
+}
+
+export function getAvailableQuestionOptions({ generation = "all", poolSize = 0 } = {}) {
+  const normalizedGeneration = cleanGenerationChoice(generation);
+  const safePoolSize = Math.max(0, Math.floor(Number(poolSize) || 0));
+  const options = [];
+
+  for (const count of FIXED_QUESTION_COUNTS) {
+    if (safePoolSize < count) continue;
+    if (normalizedGeneration !== "all" && safePoolSize === count) continue;
+    options.push({
+      value: String(count),
+      label: String(count),
+      publicEligible: true,
+      disabled: false,
+    });
+  }
+
+  if (normalizedGeneration === "all") {
+    options.push({
+      value: "all-pokemon",
+      label: "All Pokémon",
+      publicEligible: false,
+      disabled: safePoolSize <= 0,
+    });
+  } else {
+    options.push({
+      value: "entire-generation",
+      label: "Entire Generation",
+      publicEligible: true,
+      disabled: safePoolSize <= 0,
+    });
+  }
+
+  return options;
+}
+
+export function resolveQuizSettings({
+  generation = "all",
+  questions = "25",
+  answerStyle = "typed",
+  timed = false,
+  leaderboard = false,
+  poolSize = 0,
+  inputDevice = "keyboard",
+} = {}) {
+  const normalizedGeneration = cleanGenerationChoice(generation);
+  const safePoolSize = Math.max(0, Math.floor(Number(poolSize) || 0));
+  const questionToken = normalizeQuestionToken(questions, normalizedGeneration, safePoolSize);
+  const length = getQuestionLength(questionToken, safePoolSize);
+  const normalizedAnswerStyle = cleanAnswerStyle(answerStyle);
+  const normalizedInputDevice = cleanInputDeviceClass(inputDevice);
+  const publicEligiblePreset = length > 0 && PUBLIC_QUESTION_TOKENS.has(questionToken);
+  const timedRun = Boolean(timed);
+
+  return {
+    version: "v2",
+    generation: normalizedGeneration,
+    questionToken,
+    length,
+    answerStyle: normalizedAnswerStyle,
+    inputDevice: normalizedInputDevice,
+    timed: timedRun,
+    leaderboard: Boolean(timedRun && leaderboard && publicEligiblePreset),
+    publicEligiblePreset,
+  };
+}
+
+export function detectInputDeviceClass({ pointer = "", maxTouchPoints = 0, userAgent = "" } = {}) {
+  const pointerType = String(pointer ?? "").trim().toLowerCase();
+  const touchPoints = Math.max(0, Number(maxTouchPoints) || 0);
+  const normalizedUserAgent = String(userAgent ?? "").toLowerCase();
+  const mobileLike = /\b(android|iphone|ipad|ipod|mobile|tablet)\b/.test(normalizedUserAgent);
+
+  if (pointerType === "coarse") return "touch";
+  if (mobileLike && touchPoints > 0) return "touch";
+  return "keyboard";
+}
+
+export function buildAutofillSuggestions(query, pool, { limit = 3 } = {}) {
+  const normalizedQuery = normalizeAnswer(query);
+  if (normalizedQuery.length < 2 || !Array.isArray(pool)) return [];
+
+  const suggestions = [];
+  const seen = new Set();
+  for (const pokemon of pool) {
+    if (!pokemon?.id || seen.has(pokemon.id)) continue;
+    const aliases = getNameAliases(pokemon).map(normalizeAnswer).filter(Boolean);
+    const prefixMatch = aliases.some((alias) => alias.startsWith(normalizedQuery));
+    const correctionDistance = prefixMatch ? 0 : getAutofillCorrectionDistance(normalizedQuery, aliases);
+    if (!prefixMatch && correctionDistance === Infinity) continue;
+    seen.add(pokemon.id);
+    suggestions.push({
+      pokemon,
+      rank: prefixMatch ? 0 : 1,
+      distance: correctionDistance,
+    });
+  }
+
+  return suggestions
+    .sort((left, right) => {
+      if (left.rank !== right.rank) return left.rank - right.rank;
+      if (left.distance !== right.distance) return left.distance - right.distance;
+      const leftLabel = left.pokemon.displayName || formatPokemonName(left.pokemon.name);
+      const rightLabel = right.pokemon.displayName || formatPokemonName(right.pokemon.name);
+      return leftLabel.localeCompare(rightLabel, undefined, { sensitivity: "base" });
+    })
+    .slice(0, Math.max(0, Number(limit) || 0))
+    .map((pokemon) => ({
+      id: pokemon.pokemon.id,
+      label: pokemon.pokemon.displayName || formatPokemonName(pokemon.pokemon.name),
+      value: pokemon.pokemon.displayName || formatPokemonName(pokemon.pokemon.name),
+    }));
+}
+
+export function isAttemptSubmission(value) {
+  return String(value ?? "").trim().length > 0;
+}
+
+export function shouldRejectQuizEvent(event) {
+  const type = String(event?.type ?? "").toLowerCase();
+  if (type === "visibilitychange") return Boolean(event?.hidden);
+
+  return new Set([
+    "app-background",
+    "app-pause",
+    "beforeunload",
+    "drop",
+    "freeze",
+    "pagehide",
+    "paste",
+  ]).has(type);
+}
+
 export function formatElapsedTime(ms) {
   const totalTenths = Math.max(0, Math.floor(Number(ms) / 100) || 0);
   const minutes = Math.floor(totalTenths / 600);
@@ -178,6 +366,23 @@ export function formatElapsedTime(ms) {
 }
 
 export function buildLeaderboardKey(settings) {
+  if (settings?.version === "v2") {
+    const generation = cleanKeyPart(settings.generation || "all");
+    const questionToken = cleanQuestionTokenForKey(settings.questionToken ?? settings.questions, generation);
+    const length = Math.max(0, Math.floor(Number(settings.length) || 0));
+    const answerStyle = cleanAnswerStyle(settings.answerStyle);
+    const inputDevice = cleanInputDeviceClass(settings.inputDevice);
+
+    return [
+      "v2",
+      `gen:${generation || "all"}`,
+      `q:${questionToken}`,
+      `total:${length}`,
+      `answer:${answerStyle}`,
+      `device:${inputDevice}`,
+    ].join("|");
+  }
+
   const length = Number(settings.length) || 0;
   const guessMode = cleanKeyPart(settings.guessMode || "name");
   const answerStyle = cleanKeyPart(settings.answerStyle || "input");
@@ -199,13 +404,32 @@ export function buildLeaderboardKey(settings) {
 }
 
 export function isLeaderboardEligible(settings, user) {
+  if (settings?.version === "v2") {
+    return Boolean(
+      user?.uid &&
+      user?.provider === "google" &&
+      settings?.timed &&
+      settings?.leaderboard &&
+      settings?.publicEligiblePreset &&
+      !settings?.rejected,
+    );
+  }
+
   return Boolean(
     user?.uid &&
     user?.provider === "google" &&
     settings?.timed &&
     settings.lengthMode === "preset" &&
-    PUBLIC_LEADERBOARD_LENGTHS.has(Number(settings.length)),
+    LEGACY_PUBLIC_LEADERBOARD_LENGTHS.has(Number(settings.length)),
   );
+}
+
+export function shouldTrackPokedexForRun(settings) {
+  if (settings?.version === "v2") {
+    return Boolean(settings?.timed && !settings?.rejected);
+  }
+
+  return Boolean(settings?.timed && !settings?.rejected);
 }
 
 export function isBetterScore(next, current) {
@@ -217,12 +441,21 @@ export function isBetterScore(next, current) {
   return Number(next.elapsedMs) < Number(current.elapsedMs);
 }
 
+export function moveMenuCursor(currentIndex, direction, itemCount) {
+  const count = Math.max(0, Number(itemCount) || 0);
+  if (!count) return -1;
+
+  const current = clamp(Number(currentIndex) || 0, 0, count - 1);
+  const delta = direction === "previous" || direction === "up" || direction === "left" ? -1 : 1;
+  return (current + delta + count) % count;
+}
+
 export function getAccessGate(progress) {
   if (!progress?.authReady) {
     return {
       locked: true,
       method: "loading",
-      label: "Loading trainer access...",
+      label: "Booting PokéOS login...",
     };
   }
 
@@ -230,7 +463,7 @@ export function getAccessGate(progress) {
     return {
       locked: false,
       method: "google",
-      label: "Google trainer access granted.",
+      label: "Google account logged in.",
     };
   }
 
@@ -239,14 +472,65 @@ export function getAccessGate(progress) {
     return {
       locked: false,
       method,
-      label: method === "guest" ? "Guest trainer access granted." : "Registered trainer access granted.",
+      label: method === "guest" ? "Guest file loaded." : "Local account logged in.",
     };
   }
 
   return {
     locked: true,
     method: "locked",
-    label: "PokeDex locked. Choose Guest, Register, or Google.",
+    label: "PokéOS login required. Choose Guest, Local Account, or Google.",
+  };
+}
+
+export function getGoogleAuthEnvironmentStatus({ href = "", userAgent = "" } = {}) {
+  const normalizedHref = String(href).toLowerCase();
+  const normalizedUserAgent = String(userAgent).toLowerCase();
+  const blockedMessage =
+    "Google sign-in is available in Chrome. Use Guest or a local Trainer ID in this app.";
+
+  if (normalizedHref.startsWith("file:///android_asset/")) {
+    return {
+      supported: false,
+      reason: "native-asset",
+      message: blockedMessage,
+    };
+  }
+
+  const androidWebView =
+    normalizedUserAgent.includes("; wv") ||
+    normalizedUserAgent.includes("webview") ||
+    (
+      normalizedUserAgent.includes("android") &&
+      normalizedUserAgent.includes("version/") &&
+      normalizedUserAgent.includes("chrome/") &&
+      normalizedUserAgent.includes("mobile safari")
+    );
+  const iosWebView =
+    (normalizedUserAgent.includes("iphone") || normalizedUserAgent.includes("ipad")) &&
+    normalizedUserAgent.includes("applewebkit") &&
+    normalizedUserAgent.includes("mobile/") &&
+    !normalizedUserAgent.includes("safari/");
+  const inAppBrowser = [
+    "fban",
+    "fbav",
+    "instagram",
+    "line/",
+    "twitter",
+  ].some((marker) => normalizedUserAgent.includes(marker));
+
+  if (androidWebView || iosWebView || inAppBrowser) {
+    return {
+      supported: false,
+      reason: "embedded-webview",
+      message: blockedMessage,
+    };
+  }
+
+  return {
+    supported: true,
+    reason: "supported-browser",
+    message: "Google sign-in is available.",
   };
 }
 
@@ -302,7 +586,7 @@ export function shuffle(values, random = Math.random) {
 }
 
 export function getSpriteUrl(id) {
-  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
 }
 
 export function getNameAliases(pokemon) {
@@ -412,6 +696,19 @@ function typoAllowance(length) {
   return 2;
 }
 
+function getAutofillCorrectionDistance(normalizedQuery, aliases) {
+  if (normalizedQuery.length < 4) return Infinity;
+  let bestDistance = Infinity;
+  for (const alias of aliases) {
+    if (!alias || alias[0] !== normalizedQuery[0]) continue;
+    if (Math.abs(alias.length - normalizedQuery.length) > 1) continue;
+    const allowance = typoAllowance(Math.max(alias.length, normalizedQuery.length));
+    const distance = levenshtein(normalizedQuery, alias);
+    if (distance <= allowance) bestDistance = Math.min(bestDistance, distance);
+  }
+  return bestDistance;
+}
+
 function levenshtein(left, right) {
   const rows = left.length + 1;
   const columns = right.length + 1;
@@ -444,6 +741,82 @@ function cleanKeyPart(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function getLegacyQuestionToken(quizSource) {
+  const lengthMode = quizSource.lengthMode === "custom" ? "custom" : "preset";
+  const requested = lengthMode === "custom"
+    ? Number(quizSource.customLength)
+    : Number(quizSource.lengthPreset);
+  const length = Number.isFinite(requested) ? requested : 25;
+
+  if (length <= 25) return "25";
+  if (length <= 50) return "50";
+  if (length <= 100) return "100";
+  return "full";
+}
+
+function normalizeQuestionToken(value, generation, poolSize) {
+  const normalizedGeneration = cleanGenerationChoice(generation);
+  const safePoolSize = Math.max(0, Math.floor(Number(poolSize) || 0));
+  const fullRunToken = normalizedGeneration === "all" ? "all-pokemon" : "entire-generation";
+  const rawToken = cleanKeyPart(value || "25");
+  let token = rawToken === "all" || rawToken === "full" ? fullRunToken : rawToken;
+
+  if (token === "all-pokemon" && normalizedGeneration !== "all") token = "entire-generation";
+  if (token === "entire-generation" && normalizedGeneration === "all") token = "all-pokemon";
+  if (!QUESTION_TOKENS.has(token)) token = "25";
+
+  if (/^\d+$/.test(token)) {
+    const count = Number(token);
+    if (!FIXED_QUESTION_COUNTS.includes(count)) return fullRunToken;
+    if (safePoolSize < count) return fullRunToken;
+    if (normalizedGeneration !== "all" && safePoolSize === count) return "entire-generation";
+  }
+
+  return token;
+}
+
+function cleanQuestionTokenForKey(value, generation) {
+  const normalizedGeneration = cleanGenerationChoice(generation);
+  const fullRunToken = normalizedGeneration === "all" ? "all-pokemon" : "entire-generation";
+  const rawToken = cleanKeyPart(value || "25");
+  let token = rawToken === "all" || rawToken === "full" ? fullRunToken : rawToken;
+
+  if (token === "all-pokemon" && normalizedGeneration !== "all") token = "entire-generation";
+  if (token === "entire-generation" && normalizedGeneration === "all") token = "all-pokemon";
+  return QUESTION_TOKENS.has(token) ? token : "25";
+}
+
+function getQuestionLength(questionToken, poolSize) {
+  if (/^\d+$/.test(questionToken)) return Number(questionToken);
+  return Math.max(0, Math.floor(Number(poolSize) || 0));
+}
+
+function cleanGenerationChoice(value) {
+  const normalized = cleanKeyPart(value || "all");
+  return normalized || "all";
+}
+
+function cleanAnswerStyle(value) {
+  const normalized = cleanKeyPart(value || "typed");
+  if (normalized === "input") return "typed";
+  return ANSWER_STYLES.has(normalized) ? normalized : "typed";
+}
+
+function cleanInputDeviceClass(value) {
+  const normalized = cleanKeyPart(value || "keyboard");
+  return INPUT_DEVICE_CLASSES.has(normalized) ? normalized : "keyboard";
+}
+
+function cleanEnum(value, allowed, fallback) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return allowed.has(normalized) ? normalized : fallback;
+}
+
+function cleanPreferenceFilter(value) {
+  const normalized = cleanKeyPart(value || "all");
+  return normalized || "all";
 }
 
 function normalizePokedexPokemon(entry, generationOverrides) {

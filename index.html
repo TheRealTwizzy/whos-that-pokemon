@@ -3,21 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PokeDex Trainer OS</title>
+    <title>PokéDex Trainer OS</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="boot-screen" class="boot-screen" aria-live="polite">
-      <div class="boot-module">
-        <span class="status-light"></span>
-        <p class="eyebrow">PokeDex OS</p>
-        <h1>Boot Sequence</h1>
-        <div class="boot-bar" aria-hidden="true"><span></span></div>
-        <p id="boot-status">Loading trainer interface...</p>
+    <div id="orientation-gate" class="orientation-gate" role="alert">
+      <div>
+        <p class="eyebrow">PokéOS Display</p>
+        <h2>Rotate Device</h2>
+        <p>Turn your phone to either landscape direction to view the full PokéDex.</p>
       </div>
     </div>
 
+    <div id="device-stage" class="device-stage">
     <div class="app-shell pokedex-device" data-device-locked="true">
       <div class="device-hinge" aria-hidden="true">
         <span></span>
@@ -33,8 +32,12 @@
           <span class="mini-light green-light"></span>
         </div>
         <div class="device-title">
-          <p class="eyebrow">National Dex Quiz</p>
-          <h1>PokeDex</h1>
+          <p class="eyebrow">PokéOS Handheld</p>
+          <h1>PokéDex</h1>
+        </div>
+        <div id="trainer-badge" class="trainer-badge" aria-label="Active trainer">
+          <span id="trainer-avatar-badge" class="trainer-avatar-badge">025</span>
+          <span id="trainer-badge-name">Locked</span>
         </div>
         <div class="auth-panel">
           <span id="auth-status">Guest mode loading...</span>
@@ -43,17 +46,20 @@
       </header>
 
       <div class="device-body">
-        <aside class="hardware-rail" aria-hidden="true">
-          <span class="rail-notch"></span>
-          <span class="rail-button"></span>
-          <span class="rail-button small"></span>
-          <span class="speaker-slots"></span>
-        </aside>
-
-        <section class="screen-bezel" aria-label="PokeDex screen">
+        <section class="screen-bezel" aria-label="PokéDex screen">
           <div class="screen-status">
-            <span>TRAINER OS</span>
+            <span>PokéOS</span>
             <span id="screen-clock">READY</span>
+          </div>
+
+          <div id="boot-screen" class="boot-screen" aria-live="polite">
+            <div class="boot-module">
+              <span class="status-light"></span>
+              <p class="eyebrow">Auto Boot</p>
+              <h1>PokéOS</h1>
+              <div class="boot-bar" aria-hidden="true"><span></span></div>
+              <p id="boot-status">Loading PokéOS...</p>
+            </div>
           </div>
 
           <section id="device-lock-screen" class="lock-screen" aria-label="Trainer login">
@@ -62,45 +68,93 @@
               <span class="closed-shell-line"></span>
             </div>
             <div class="lock-copy">
-              <p class="eyebrow">Access Required</p>
-              <h2>Trainer identity locked</h2>
-              <p id="lock-status">Guest access, local ID, or Google Auth accepted.</p>
+              <p class="eyebrow">PokéOS Login</p>
+              <h2>Choose File</h2>
+              <p id="lock-status">Guest access, local account, or Google account accepted.</p>
             </div>
             <div class="login-actions">
               <button id="guest-button" class="primary" type="button">Guest</button>
-              <button id="register-button" type="button">Register</button>
-              <button id="login-button" type="button">Google Auth</button>
+              <button id="register-button" type="button">Local Account</button>
+              <button id="login-button" type="button">Google</button>
             </div>
+            <div id="trainer-profile-list" class="trainer-profile-list" aria-label="Local Trainer profiles"></div>
             <form id="register-form" class="register-form hidden">
               <label for="register-name">
                 <span>Trainer Name</span>
                 <input id="register-name" type="text" maxlength="24" autocomplete="nickname" placeholder="Red" />
               </label>
-              <button type="submit">Create Local ID</button>
+              <button type="submit">Create / Load</button>
             </form>
           </section>
 
           <div id="device-workspace" class="workspace hidden">
-            <nav class="main-menu" aria-label="PokeDex main menu">
-              <button type="button" data-view-target="setup" aria-pressed="true">Quiz</button>
-              <button type="button" data-view-target="dex">PokeDex Log</button>
-              <button type="button" data-view-target="leaderboard">Leaderboard</button>
-              <button type="button" data-view-target="settings">Settings</button>
+            <section id="os-splash" class="os-splash" aria-live="polite">
+              <div class="os-splash-mark" aria-hidden="true"></div>
+              <p class="eyebrow">PokéOS</p>
+              <h2 id="os-splash-title">Command Menu</h2>
+              <p id="os-splash-subtitle">Choose a program.</p>
+            </section>
+
+            <button id="os-menu-button" class="os-menu-button" type="button" aria-label="Return to PokéOS command menu">MENU</button>
+
+            <nav class="main-menu" aria-label="PokéDex main menu">
+              <button type="button" data-view-target="setup" aria-pressed="false">Quiz</button>
+              <button type="button" data-view-target="dex">PokéDex</button>
+              <button type="button" data-view-target="leaderboard">Ranking</button>
+              <button type="button" data-view-target="settings">Option</button>
             </nav>
 
             <main class="layout">
-              <section class="panel setup-panel view-panel" data-view="setup" aria-label="Quiz launch">
+              <section class="panel setup-panel view-panel hidden" data-view="setup" aria-label="Quiz launch">
                 <div class="section-heading">
                   <p class="eyebrow">Program Slot 01</p>
-                  <h2>Who's That Pokemon?</h2>
-                  <p id="catalog-status">Loading every generation from PokeAPI...</p>
+                  <h2>Who's That Pokémon?</h2>
+                  <p id="catalog-status">Loading every Pokémon generation from PokéAPI...</p>
                 </div>
 
                 <div class="mission-card">
                   <span class="mission-chip">Silhouette Scanner</span>
                   <p>
-                    Scanner profile loaded. Identification records write to the current trainer archive.
+                    Classic silhouette identification. Choose a run profile, then start the scanner.
                   </p>
+                </div>
+
+                <div class="setup-console" aria-label="Quiz setup">
+                  <label>
+                    <span>Generation</span>
+                    <select id="setup-generation">
+                      <option value="all">All Pokémon</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Questions</span>
+                    <select id="setup-questions">
+                      <option value="25">25</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Answer</span>
+                    <select id="setup-answer-style">
+                      <option value="typed">Typed</option>
+                      <option value="choice">Multiple Choice</option>
+                    </select>
+                  </label>
+
+                  <label class="toggle-row">
+                    <span>Timed</span>
+                    <input id="setup-timed" type="checkbox" />
+                  </label>
+
+                  <label class="toggle-row">
+                    <span>Leaderboard</span>
+                    <input id="setup-leaderboard" type="checkbox" />
+                  </label>
+                </div>
+
+                <div id="setup-preview" class="setup-preview" role="status">
+                  Load the PokéDex catalog to configure a quiz.
                 </div>
 
                 <div class="setup-actions">
@@ -110,81 +164,48 @@
                 </div>
               </section>
 
-              <section class="panel settings-panel view-panel hidden" data-view="settings" aria-label="PokeDex settings">
+              <section class="panel settings-panel view-panel hidden" data-view="settings" aria-label="PokéDex settings">
                 <div class="section-heading">
-                  <p class="eyebrow">Device Settings</p>
-                  <h2>Quiz Profile</h2>
-                  <p>Configure scanner mode, filters, presentation, and timed runs.</p>
+                  <p class="eyebrow">Device Option</p>
+                  <h2>Option</h2>
+                  <p id="settings-status">Configure trainer identity and the PokéDex shell.</p>
                 </div>
 
-                <div class="control-grid">
+                <div class="trainer-preferences">
                   <label>
-                    <span>Guess</span>
-                    <select id="guess-mode">
-                      <option value="name">Name</option>
-                      <option value="type">Type</option>
-                      <option value="generation">Generation</option>
-                      <option value="number">Pokedex #</option>
+                    <span>Partner Avatar</span>
+                    <select id="trainer-avatar">
+                      <option value="25">Pikachu #025</option>
+                      <option value="133">Eevee #133</option>
+                      <option value="150">Mewtwo #150</option>
+                      <option value="448">Lucario #448</option>
+                      <option value="906">Sprigatito #906</option>
                     </select>
                   </label>
 
                   <label>
-                    <span>Style</span>
-                    <select id="answer-style">
-                      <option value="input">Input best guess</option>
-                      <option value="choice">Multiple choice</option>
+                    <span>Device Shell</span>
+                    <select id="device-theme">
+                      <option value="classic">Classic Red</option>
+                      <option value="ocean">Ocean Blue</option>
+                      <option value="forest">Forest Green</option>
+                      <option value="volt">Volt Yellow</option>
                     </select>
-                  </label>
-
-                  <label>
-                    <span>Presentation</span>
-                    <select id="presentation">
-                      <option value="silhouette">Silhouette</option>
-                      <option value="color">Colored image</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Type Filter</span>
-                    <select id="type-filter">
-                      <option value="all">All types</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Generation Filter</span>
-                    <select id="generation-filter">
-                      <option value="all">All generations</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Name or # Filter</span>
-                    <input id="search-filter" type="search" placeholder="Pikachu or 25" />
                   </label>
 
                   <label class="toggle-row">
-                    <span>Timed</span>
-                    <input id="timed-toggle" type="checkbox" />
+                    <span>Speaker</span>
+                    <input id="sound-enabled" type="checkbox" checked />
                   </label>
-                </div>
 
-                <div class="length-controls" role="group" aria-label="Quiz length">
-                  <button type="button" data-length="25" aria-pressed="true">25</button>
-                  <button type="button" data-length="50">50</button>
-                  <button type="button" data-length="150">150</button>
-                  <button type="button" data-length="250">250</button>
-                  <label class="custom-length">
-                    <span>Custom</span>
-                    <input id="custom-length" type="number" min="10" value="10" />
-                  </label>
+                  <button id="save-preferences-button" type="button">Save Current Defaults</button>
                 </div>
               </section>
 
-              <section class="panel dex-panel view-panel hidden" data-view="dex" aria-label="PokeDex log">
+              <section class="panel dex-panel view-panel hidden" data-view="dex" aria-label="PokéDex log">
                 <div class="section-heading">
                   <p class="eyebrow">Archive Slot 151+</p>
-                  <h2>PokeDex Log</h2>
+                  <h2>PokéDex Log</h2>
                   <p id="dex-summary">Correct guesses are tracked locally.</p>
                 </div>
                 <div class="dex-meter" aria-hidden="true">
@@ -213,8 +234,8 @@
                     <strong id="score">0</strong>
                   </div>
                   <div class="metric">
-                    <span>Pool</span>
-                    <strong id="pool-count">0</strong>
+                    <span>Attempts</span>
+                    <strong id="attempts-remaining">3</strong>
                   </div>
                   <div class="metric timer-metric">
                     <span>Timer</span>
@@ -223,13 +244,16 @@
                 </div>
 
                 <div class="art-panel">
-                  <img id="pokemon-art" alt="Pokemon quiz prompt" />
+                  <img id="pokemon-art" alt="Pokémon quiz prompt" />
+                  <button id="art-toggle-button" class="art-toggle-button" type="button" aria-pressed="false">
+                    Hold Art
+                  </button>
                 </div>
 
                 <div class="prompt-row">
                   <div>
                     <p class="eyebrow">Current Challenge</p>
-                    <h2 id="prompt-title">Guess the Pokemon name</h2>
+                    <h2 id="prompt-title">Guess the Pokémon name</h2>
                     <p id="prompt-detail">Make your best guess.</p>
                   </div>
                 </div>
@@ -240,15 +264,15 @@
                     <input id="guess-input" type="text" autocomplete="off" />
                     <button id="guess-button" type="submit">Guess</button>
                   </div>
+                  <div id="autofill-list" class="autofill-list" aria-label="Matching Pokémon names"></div>
                 </form>
 
                 <div id="choice-grid" class="choice-grid hidden"></div>
                 <p id="message" class="message" role="status"></p>
 
                 <div class="quiz-actions">
-                  <button id="skip-button" type="button">Reveal / Skip</button>
                   <button id="next-button" type="button" class="hidden">Next</button>
-                  <button id="restart-button" type="button">Main Menu</button>
+                  <button id="restart-button" type="button">PokéOS</button>
                 </div>
               </section>
 
@@ -256,13 +280,14 @@
                 <p class="eyebrow">Run Complete</p>
                 <h2>Quiz Complete</h2>
                 <p id="summary-text"></p>
-                <button id="summary-restart-button" class="primary" type="button">Return to Menu</button>
+                <button id="summary-restart-button" class="primary" type="button">Return to PokéOS</button>
               </section>
             </main>
           </div>
         </section>
       </div>
     </div>
+  </div>
 
     <script src="firebase-config.js"></script>
     <script type="module" src="src/app.mjs"></script>

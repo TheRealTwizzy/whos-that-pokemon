@@ -16,7 +16,7 @@ export async function loadPokemonCatalog({ forceRefresh = false } = {}) {
     writeCatalogCache(catalog);
     return catalog;
   } catch {
-    // The static Pokedex is the preferred path. Live PokeAPI remains a fallback
+    // The static PokéDex is the preferred path. Live PokéAPI remains a fallback
     // for local file previews or stale deployments missing the generated JSON.
   }
 
@@ -33,7 +33,7 @@ export async function loadPokedexData({ cacheBust = false } = {}) {
 
 export function normalizePokedexData(data) {
   if (!data || !Array.isArray(data.pokemon)) {
-    throw new Error("Bundled Pokedex data is missing a pokemon array.");
+    throw new Error("Bundled PokéDex data is missing a pokemon array.");
   }
 
   const generations = normalizeGenerations(data);
@@ -63,7 +63,7 @@ export function normalizePokedexData(data) {
         pokedexEntry: entry.pokedexEntry ?? description,
         flavorVersion: entry.flavorVersion ?? "",
         abilities: Array.isArray(entry.abilities) ? entry.abilities : [],
-        spriteUrl: entry.spriteUrl ?? entry.artwork ?? entry.sprites?.officialArtwork ?? entry.sprites?.frontDefault ?? "",
+        spriteUrl: entry.sprites?.frontDefault ?? entry.spriteUrl ?? entry.artwork ?? entry.sprites?.officialArtwork ?? "",
         artworkUrl: entry.artworkUrl ?? entry.artwork ?? entry.sprites?.officialArtwork ?? "",
         sprites: entry.sprites ?? {},
         source: entry.source ?? null,
@@ -276,7 +276,7 @@ function findSpeciesNameForPokemon(pokemonName, sortedSpeciesNames) {
 
 async function fetchJson(url) {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`PokeAPI request failed: ${response.status} ${url}`);
+  if (!response.ok) throw new Error(`PokéAPI request failed: ${response.status} ${url}`);
   return response.json();
 }
 

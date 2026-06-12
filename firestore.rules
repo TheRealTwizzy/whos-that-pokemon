@@ -24,19 +24,47 @@ service cloud.firestore {
         && data.elapsedMs >= 0;
     }
 
+    function validV2Score(userId, boardKey) {
+      let data = request.resource.data;
+      return validScore(userId)
+        && data.boardKey == boardKey
+        && boardKey.matches('^v2\\|gen:[a-z0-9-]+\\|q:(25|50|100|entire-generation|all-pokemon)\\|total:[0-9]+\\|answer:(typed|choice)\\|device:(keyboard|touch)$')
+        && data.settings.version == "v2"
+        && data.settings.generation is string
+        && data.settings.questionToken is string
+        && data.settings.length is int
+        && data.settings.answerStyle in ["typed", "choice"]
+        && data.settings.inputDevice in ["keyboard", "touch"]
+        && data.settings.timed == true
+        && data.settings.leaderboard is bool
+        && data.settings.publicEligiblePreset is bool
+        && data.total == data.settings.length
+        && data.leaderboard is bool
+        && data.rejected == false;
+    }
+
+    function validPublicV2Score(userId, boardKey) {
+      let data = request.resource.data;
+      return validV2Score(userId, boardKey)
+        && data.leaderboard == true
+        && data.settings.leaderboard == true
+        && data.settings.publicEligiblePreset == true
+        && data.settings.questionToken != "all-pokemon";
+    }
+
     match /pokemonQuizProfiles/{userId} {
       allow read, write: if signedInAs(userId);
 
       match /personalScores/{scoreId} {
         allow read: if signedInAs(userId);
-        allow create, update: if validScore(userId);
+        allow create, update: if validV2Score(userId, scoreId);
         allow delete: if false;
       }
     }
 
     match /leaderboards/{boardKey}/scores/{userId} {
       allow read: if true;
-      allow create, update: if validScore(userId);
+      allow create, update: if validPublicV2Score(userId, boardKey);
       allow delete: if false;
     }
   }

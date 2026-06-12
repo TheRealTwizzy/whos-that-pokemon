@@ -25,3 +25,6 @@ android/build/
 *.sln
 *.sw?
 .gstack/
+.codex-*.csv
+gbc-*.png
+qa-*.png
