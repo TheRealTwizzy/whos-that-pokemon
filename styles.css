@@ -90,57 +90,10 @@ body {
   width: 1180px;
   margin-left: var(--device-offset-x, 0px);
   margin-top: var(--device-offset-y, 0px);
-  transform: scale(var(--device-scale, 1));
+  transform:
+    rotate(var(--device-rotation, 0deg))
+    scale(var(--device-scale, 1));
   transform-origin: top left;
-}
-
-.orientation-gate {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: none;
-  place-items: center;
-  padding: 24px;
-  background:
-    radial-gradient(circle at 50% 36%, rgba(216, 38, 55, 0.24), transparent 36%),
-    linear-gradient(180deg, #20262a, #090b10);
-  color: var(--lcd-ink);
-}
-
-.orientation-gate > div {
-  width: min(420px, 100%);
-  border: 10px solid #080a0d;
-  padding: 24px;
-  background:
-    linear-gradient(rgba(36, 61, 42, 0.14) 50%, transparent 50%) 0 0 / 100% 5px,
-    var(--gbc-lcd);
-  box-shadow: 0 0 0 4px #2d3134, 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 7px rgba(64, 92, 67, 0.32);
-  font-family: "Courier New", Consolas, monospace;
-}
-
-.orientation-gate h2 {
-  margin: 6px 0 10px;
-  font-size: 2rem;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.orientation-gate p:last-child {
-  color: #26362c;
-  font-weight: 850;
-  line-height: 1.35;
-}
-
-@media (orientation: portrait) and (max-width: 760px) {
-  .orientation-gate {
-    display: grid;
-  }
-
-  .device-stage {
-    height: 100vh;
-    overflow: hidden;
-    visibility: hidden;
-  }
 }
 
 button,
@@ -216,6 +169,76 @@ p {
 
 .native-app [data-web-only] {
   display: none !important;
+}
+
+html.lcd-only-mode,
+html.lcd-only-mode body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--gbc-lcd);
+}
+
+html.lcd-only-mode .device-stage {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  display: block;
+  overflow: hidden;
+  background: var(--gbc-lcd);
+}
+
+html.lcd-only-mode .device-stage.fit-device .pokedex-device {
+  width: var(--lcd-shell-width, 100vw) !important;
+  height: 100vh;
+  height: var(--lcd-shell-height, 100vh);
+  margin: 0 !important;
+  padding: 0 !important;
+  margin-left: var(--device-offset-x, 0px) !important;
+  margin-top: var(--device-offset-y, 0px) !important;
+  transform:
+    rotate(var(--device-rotation, 0deg))
+    scale(var(--device-scale, 1)) !important;
+  transform-origin: top left;
+}
+
+html.lcd-only-mode .device-hinge,
+html.lcd-only-mode .topbar {
+  display: none !important;
+}
+
+html.lcd-only-mode .device-body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.lcd-only-mode .screen-bezel {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.lcd-only-mode .workspace,
+html.lcd-only-mode .lock-screen {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  box-shadow:
+    inset 0 0 0 6px rgba(64, 92, 67, 0.32),
+    inset 0 0 44px rgba(18, 31, 21, 0.26);
 }
 
 .boot-screen {
@@ -350,7 +373,7 @@ p {
 .topbar {
   min-height: 128px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(210px, 320px);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 18px;
   border-radius: 26px 26px 10px 10px;
@@ -359,7 +382,7 @@ p {
 
 .trainer-badge {
   min-width: 150px;
-  display: grid;
+  display: none;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
@@ -450,7 +473,7 @@ p {
 }
 
 .auth-panel {
-  display: grid;
+  display: none;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
@@ -494,7 +517,7 @@ p {
 }
 
 .screen-status {
-  display: flex;
+  display: none;
   justify-content: space-between;
   gap: 12px;
   width: min(100%, 920px);
@@ -815,6 +838,72 @@ p {
 
 .workspace[data-os-state="app"] .os-menu-button {
   display: inline-flex;
+}
+
+.os-account-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 8;
+  width: min(610px, calc(100% - 112px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  color: var(--lcd-ink);
+  font-size: 0.72rem;
+}
+
+.os-account-copy,
+.os-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 3px solid var(--line);
+  background: var(--gbc-paper);
+  box-shadow: inset 0 0 0 3px var(--gbc-paper-dark), 4px 4px 0 rgba(23, 34, 22, 0.18);
+}
+
+.os-account-copy {
+  padding: 5px 8px;
+}
+
+.os-account-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.88rem;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.os-account-copy span:last-child {
+  flex: 0 0 auto;
+  color: #26362c;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.os-account-actions {
+  padding: 4px;
+}
+
+.os-account-actions button {
+  min-height: 28px;
+  padding: 3px 7px;
+  font-size: 0.66rem;
+}
+
+.workspace[data-os-state="launching"] .os-account-panel {
+  display: none;
+}
+
+.workspace[data-os-state="app"] .layout,
+.workspace[data-os-state="app"] .quiz-panel:not(.hidden),
+.workspace[data-os-state="app"] .summary-panel:not(.hidden) {
+  padding-top: 58px;
 }
 
 .os-splash {
@@ -1189,6 +1278,17 @@ p {
 
 .trainer-preferences button {
   align-self: end;
+}
+
+.rights-notice {
+  margin-top: 10px;
+  border: 2px solid rgba(9, 11, 16, 0.32);
+  padding: 8px;
+  background: #f8ffe9;
+  color: #26362c;
+  font-size: 0.7rem;
+  font-weight: 850;
+  line-height: 1.3;
 }
 
 label {

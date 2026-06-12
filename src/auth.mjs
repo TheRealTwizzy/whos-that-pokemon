@@ -213,14 +213,7 @@ export function createProgressStore(onChange = () => {}, options = {}) {
 
       authModule.onAuthStateChanged(auth, async (user) => {
         state.authPending = false;
-        state.user = user
-          ? {
-              uid: user.uid,
-              displayName: user.displayName || "Google player",
-              photoURL: user.photoURL || "",
-              provider: "google",
-            }
-          : null;
+        state.user = user ? normalizeGoogleUser(user) : null;
 
         if (user) {
           state.localTrainer = null;
@@ -256,11 +249,19 @@ export function createProgressStore(onChange = () => {}, options = {}) {
       state.authPending = true;
       state.status = "Opening Google login...";
       emit();
-      await withTimeout(
+      const credential = await withTimeout(
         firebase.authModule.signInWithPopup(firebase.auth, firebase.provider),
         options.timeoutMs ?? 30000,
       );
       state.authPending = false;
+      if (credential?.user) {
+        state.user = normalizeGoogleUser(credential.user);
+        state.localTrainer = null;
+        writeActiveLocalTrainerId(null);
+        state.status = `Signed in as ${state.user.displayName}.`;
+      } else {
+        state.status = "Google login complete.";
+      }
       emit();
     } catch (error) {
       state.authPending = false;
@@ -529,6 +530,15 @@ export function createProgressStore(onChange = () => {}, options = {}) {
     selectLocalTrainer,
     clearLocalTrainer,
     updateTrainerPreferences,
+  };
+}
+
+function normalizeGoogleUser(user) {
+  return {
+    uid: user.uid,
+    displayName: user.displayName || "Google player",
+    photoURL: user.photoURL || "",
+    provider: "google",
   };
 }
 

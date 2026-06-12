@@ -5,17 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PokéDex Trainer OS</title>
     <link rel="icon" href="data:," />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#d82637" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="PokéDex" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="orientation-gate" class="orientation-gate" role="alert">
-      <div>
-        <p class="eyebrow">PokéOS Display</p>
-        <h2>Rotate Device</h2>
-        <p>Turn your phone to either landscape direction to view the full PokéDex.</p>
-      </div>
-    </div>
-
     <div id="device-stage" class="device-stage">
     <div class="app-shell pokedex-device" data-device-locked="true">
       <div class="device-hinge" aria-hidden="true">
@@ -32,7 +29,6 @@
           <span class="mini-light green-light"></span>
         </div>
         <div class="device-title">
-          <p class="eyebrow">PokéOS Handheld</p>
           <h1>PokéDex</h1>
         </div>
         <div id="trainer-badge" class="trainer-badge" aria-label="Active trainer">
@@ -40,8 +36,7 @@
           <span id="trainer-badge-name">Locked</span>
         </div>
         <div class="auth-panel">
-          <span id="auth-status">Guest mode loading...</span>
-          <button id="logout-button" type="button" class="hidden">Lock</button>
+          <span id="auth-status"></span>
         </div>
       </header>
 
@@ -76,6 +71,9 @@
               <button id="guest-button" class="primary" type="button">Guest</button>
               <button id="register-button" type="button">Local Account</button>
               <button id="login-button" type="button">Google</button>
+              <button type="button" data-lcd-fullscreen>LCD Full</button>
+              <button type="button" data-install-app>Install App</button>
+              <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Android APK</a>
             </div>
             <div id="trainer-profile-list" class="trainer-profile-list" aria-label="Local Trainer profiles"></div>
             <form id="register-form" class="register-form hidden">
@@ -96,6 +94,18 @@
             </section>
 
             <button id="os-menu-button" class="os-menu-button" type="button" aria-label="Return to PokéOS command menu">MENU</button>
+            <aside id="os-account-panel" class="os-account-panel" aria-label="Active PokéOS account">
+              <div class="os-account-copy">
+                <span class="eyebrow">Trainer File</span>
+                <strong id="os-account-name">Locked</strong>
+                <span id="os-account-method">Choose File</span>
+              </div>
+              <div class="os-account-actions">
+                <button type="button" data-lcd-fullscreen>LCD Full</button>
+                <button type="button" data-install-app>Install App</button>
+                <button id="logout-button" type="button">Lock</button>
+              </div>
+            </aside>
 
             <nav class="main-menu" aria-label="PokéDex main menu">
               <button type="button" data-view-target="setup" aria-pressed="false">Quiz</button>
@@ -160,7 +170,7 @@
                 <div class="setup-actions">
                   <button id="start-button" class="primary" type="button" disabled>Start Quiz</button>
                   <button id="refresh-data-button" type="button">Refresh Data</button>
-                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Download APK</a>
+                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Android APK</a>
                 </div>
               </section>
 
@@ -199,7 +209,13 @@
                   </label>
 
                   <button id="save-preferences-button" type="button">Save Current Defaults</button>
+                  <button type="button" data-install-app>Install App</button>
+                  <a class="download-link" href="downloads/whos-that-pokemon.apk" download data-web-only>Android APK</a>
                 </div>
+                <p class="rights-notice">
+                  ©2026 Pokémon. ©1995-2026 Nintendo/Creatures Inc./GAME FREAK inc.
+                  Pokémon and Pokémon character names are trademarks of Nintendo.
+                </p>
               </section>
 
               <section class="panel dex-panel view-panel hidden" data-view="dex" aria-label="PokéDex log">

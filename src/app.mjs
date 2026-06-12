@@ -33,7 +33,6 @@ if (location.href.startsWith("file:///android_asset/")) {
 const elements = {
   deviceStage: $("#device-stage"),
   appShell: $(".pokedex-device"),
-  orientationGate: $("#orientation-gate"),
   trainerBadge: $("#trainer-badge"),
   trainerAvatarBadge: $("#trainer-avatar-badge"),
   trainerBadgeName: $("#trainer-badge-name"),
@@ -47,6 +46,8 @@ const elements = {
   osSplashTitle: $("#os-splash-title"),
   osSplashSubtitle: $("#os-splash-subtitle"),
   osMenuButton: $("#os-menu-button"),
+  osAccountName: $("#os-account-name"),
+  osAccountMethod: $("#os-account-method"),
   guest: $("#guest-button"),
   register: $("#register-button"),
   registerForm: $("#register-form"),
@@ -96,6 +97,8 @@ const elements = {
   summaryRestart: $("#summary-restart-button"),
   viewButtons: [...document.querySelectorAll("[data-view-target]")],
   viewPanels: [...document.querySelectorAll("[data-view]")],
+  lcdFullscreenButtons: [...document.querySelectorAll("[data-lcd-fullscreen]")],
+  installButtons: [...document.querySelectorAll("[data-install-app]")],
 };
 
 const googleAuthEnvironment = getGoogleAuthEnvironmentStatus({
@@ -144,12 +147,14 @@ const state = {
   menuExitArmedUntil: 0,
   soundEnabled: audio.enabled,
   bootComplete: false,
+  lcdOnlyMode: false,
   quizArtworkSource: "pixel",
   artToggleTimerId: 0,
 };
 
 let leaderboardRequestId = 0;
 let launchTimerId = 0;
+let deferredInstallPrompt = null;
 
 const OS_APP_LABELS = {
   setup: {
@@ -243,6 +248,18 @@ function bindEvents() {
     playCue("lock");
     lockDevice();
   });
+  elements.lcdFullscreenButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      playCue("menu");
+      void toggleLcdOnlyMode();
+    });
+  });
+  elements.installButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      playCue("menu");
+      void installMobileApp();
+    });
+  });
   elements.refreshData.addEventListener("click", () => {
     playCue("scan");
     pulseWorkspace("screen-scan");
@@ -283,6 +300,22 @@ function bindEvents() {
   window.addEventListener("orientationchange", () => {
     window.setTimeout(fitDeviceToViewport, 120);
   });
+  window.screen?.orientation?.addEventListener?.("change", () => {
+    window.setTimeout(fitDeviceToViewport, 80);
+  });
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+  });
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    setInstallStatus("PokéDex installed.");
+  });
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement && state.lcdOnlyMode) {
+      setLcdOnlyMode(false);
+    }
+  });
   document.addEventListener("visibilitychange", () => {
     void rejectActiveQuiz({ type: "visibilitychange", hidden: document.hidden });
   });
@@ -320,6 +353,7 @@ function bindEvents() {
 
 async function init() {
   elements.soundEnabled.checked = state.soundEnabled;
+  registerServiceWorker();
   renderAuth();
   updateDeviceShell();
   fitDeviceToViewport();
@@ -909,6 +943,7 @@ async function finishQuiz() {
 
 function renderAuth() {
   const progress = state.progress ?? progressStore.getState();
+  const wasUnlocked = Boolean(state.deviceUnlocked);
   if (progress.user) {
     state.deviceUnlocked = true;
     state.deviceAccess = { type: "google", label: progress.user.displayName || "Google trainer" };
@@ -926,7 +961,7 @@ function renderAuth() {
 
   const gate = getDeviceGate(progress);
   state.deviceUnlocked = !gate.locked;
-  elements.authStatus.textContent = getAuthStatusText(progress);
+  elements.authStatus.textContent = getHardwareStatusText(progress);
   elements.login.disabled =
     !progress.authAvailable ||
     progress.authPending ||
@@ -940,7 +975,11 @@ function renderAuth() {
   renderLocalTrainerProfiles(progress);
   hydrateTrainerPreferences();
   renderTrainerBadge();
+  renderOsAccount(progress);
   updateDeviceShell();
+  if (!gate.locked && !wasUnlocked && state.bootComplete) {
+    setActiveView("menu", { focusMenu: true });
+  }
 }
 
 function renderTrainerBadge(progress = state.progress ?? progressStore.getState()) {
@@ -981,7 +1020,7 @@ function renderLocalTrainerProfiles(progress) {
         }
 
         setLockStatus(`Local account loaded: ${result.profile.displayName}.`);
-        setActiveView("setup");
+        setActiveView("menu", { focusMenu: true });
       });
       return button;
     }),
@@ -1509,12 +1548,14 @@ function lockDevice() {
 function updateDeviceShell() {
   const progress = state.progress ?? progressStore.getState();
   const unlocked = isDeviceUnlocked();
-  elements.authStatus.textContent = getAuthStatusText(progress);
+  elements.authStatus.textContent = getHardwareStatusText(progress);
   elements.appShell.dataset.deviceLocked = String(!unlocked);
   elements.workspace.classList.toggle("hidden", !unlocked);
   elements.lockScreen.classList.toggle("hidden", unlocked);
   elements.screenClock.textContent = state.bootComplete ? (unlocked ? "ONLINE" : "LOCKED") : "BOOT";
   elements.logout.classList.toggle("hidden", !unlocked);
+  renderOsAccount(progress);
+  updateLcdFullscreenButtons();
   fitDeviceToViewport();
 }
 
@@ -1522,25 +1563,106 @@ function fitDeviceToViewport() {
   if (!elements.deviceStage || !elements.appShell) return;
 
   elements.deviceStage.classList.add("fit-device");
+  const rotation = getAutoLandscapeRotation();
+  elements.deviceStage.classList.toggle("auto-rotate-landscape", rotation !== 0);
+  elements.appShell.style.setProperty("--device-rotation", `${rotation}deg`);
+
+  if (state.lcdOnlyMode) {
+    const logicalWidth = rotation === 0 ? window.innerWidth : window.innerHeight;
+    const logicalHeight = rotation === 0 ? window.innerHeight : window.innerWidth;
+    const offset = getRotatedOffset({
+      rotation,
+      width: logicalWidth,
+      height: logicalHeight,
+      scale: 1,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    elements.appShell.style.setProperty("--lcd-shell-width", `${logicalWidth}px`);
+    elements.appShell.style.setProperty("--lcd-shell-height", `${logicalHeight}px`);
+    elements.appShell.style.setProperty("--device-scale", "1");
+    elements.appShell.style.setProperty("--device-offset-x", `${offset.x}px`);
+    elements.appShell.style.setProperty("--device-offset-y", `${offset.y}px`);
+    elements.deviceStage.style.setProperty("--fitted-device-height", `${window.innerHeight}px`);
+    return;
+  }
+
   elements.appShell.style.setProperty("--device-scale", "1");
   elements.appShell.style.setProperty("--device-offset-x", "0px");
   elements.appShell.style.setProperty("--device-offset-y", "0px");
+  elements.appShell.style.setProperty("--lcd-shell-width", "");
+  elements.appShell.style.setProperty("--lcd-shell-height", "");
+  elements.appShell.style.setProperty("--device-rotation", "0deg");
   const rect = elements.appShell.getBoundingClientRect();
+  elements.appShell.style.setProperty("--device-rotation", `${rotation}deg`);
   const availableWidth = Math.max(320, window.innerWidth - 10);
   const availableHeight = Math.max(240, window.innerHeight - 10);
-  const scale = Math.max(
-    0.25,
-    Math.min(
-      1,
-      availableWidth / Math.max(1, rect.width),
-      availableHeight / Math.max(1, rect.height),
-    ),
-  );
+  const rotated = rotation !== 0;
+  const fittedWidth = rotated ? rect.height : rect.width;
+  const fittedHeight = rotated ? rect.width : rect.height;
+  const scale = Math.max(0.25, Math.min(1, availableWidth / Math.max(1, fittedWidth), availableHeight / Math.max(1, fittedHeight)));
+  const offset = getRotatedOffset({
+    rotation,
+    width: rect.width,
+    height: rect.height,
+    scale,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  });
 
   elements.appShell.style.setProperty("--device-scale", scale.toFixed(4));
-  elements.appShell.style.setProperty("--device-offset-x", `${Math.max(0, Math.floor((window.innerWidth - rect.width * scale) / 2))}px`);
-  elements.appShell.style.setProperty("--device-offset-y", `${Math.max(0, Math.floor((window.innerHeight - rect.height * scale) / 2))}px`);
-  elements.deviceStage.style.setProperty("--fitted-device-height", `${Math.ceil(rect.height * scale)}px`);
+  elements.appShell.style.setProperty("--device-offset-x", `${offset.x}px`);
+  elements.appShell.style.setProperty("--device-offset-y", `${offset.y}px`);
+  elements.deviceStage.style.setProperty("--fitted-device-height", `${Math.ceil(fittedHeight * scale)}px`);
+}
+
+function getAutoLandscapeRotation() {
+  if (!shouldAutoRotateToLandscape()) return 0;
+  const angle = getViewportOrientationAngle();
+  return angle === 180 || angle === 270 ? -90 : 90;
+}
+
+function shouldAutoRotateToLandscape() {
+  const portraitViewport = window.innerHeight > window.innerWidth;
+  if (!portraitViewport) return false;
+  return document.documentElement.classList.contains("native-app") ||
+    window.matchMedia?.("(pointer: coarse)")?.matches ||
+    navigator.maxTouchPoints > 0 ||
+    window.innerWidth <= 760;
+}
+
+function getViewportOrientationAngle() {
+  const rawAngle = Number.isFinite(window.screen?.orientation?.angle)
+    ? window.screen.orientation.angle
+    : Number(window.orientation || 0);
+  return ((Math.round(rawAngle / 90) * 90) % 360 + 360) % 360;
+}
+
+function getRotatedOffset({ rotation, width, height, scale, viewportWidth, viewportHeight }) {
+  const normalizedRotation = Number(rotation) || 0;
+  const rotatedWidth = normalizedRotation === 0 ? width * scale : height * scale;
+  const rotatedHeight = normalizedRotation === 0 ? height * scale : width * scale;
+  const centeredX = Math.max(0, Math.floor((viewportWidth - rotatedWidth) / 2));
+  const centeredY = Math.max(0, Math.floor((viewportHeight - rotatedHeight) / 2));
+
+  if (normalizedRotation > 0) {
+    return {
+      x: Math.floor(centeredX + height * scale),
+      y: centeredY,
+    };
+  }
+
+  if (normalizedRotation < 0) {
+    return {
+      x: centeredX,
+      y: Math.floor(centeredY + width * scale),
+    };
+  }
+
+  return {
+    x: centeredX,
+    y: centeredY,
+  };
 }
 
 function completeBoot() {
@@ -1552,16 +1674,30 @@ function completeBoot() {
   }, 420);
 }
 
-function getAuthStatusText(progress) {
+function getHardwareStatusText(progress) {
+  if (!state.bootComplete) return "BOOT";
   const gate = getDeviceGate(progress);
-  if (progress.user) return progress.status;
-  if (progress.localTrainer) return `Local account: ${progress.localTrainer.displayName}.`;
-  if (!gate.locked && state.deviceAccess) {
-    if (state.deviceAccess.type === "guest") return "Guest trainer session active.";
-    return `Local account: ${state.deviceAccess.label}.`;
+  if (progress.authPending) return "LOGIN";
+  return gate.locked ? "LOCKED" : "ONLINE";
+}
+
+function renderOsAccount(progress = state.progress ?? progressStore.getState()) {
+  if (!elements.osAccountName || !elements.osAccountMethod) return;
+  const identity = getCurrentTrainerIdentity(progress);
+  if (!identity) {
+    elements.osAccountName.textContent = "Locked";
+    elements.osAccountMethod.textContent = getLockStatusText(progress);
+    return;
   }
-  if (!googleAuthEnvironment.supported) return googleAuthEnvironment.message;
-  return gate.label || progress.status;
+
+  elements.osAccountName.textContent = identity.displayName;
+  elements.osAccountMethod.textContent = getOsAccountMethodLabel(identity.provider);
+}
+
+function getOsAccountMethodLabel(provider) {
+  if (provider === "google") return "Google Account";
+  if (provider === "site") return "Local Account";
+  return "Guest File";
 }
 
 function getLockStatusText(progress) {
@@ -1633,6 +1769,59 @@ function isFormField(target) {
 
 function setLockStatus(text) {
   elements.lockStatus.textContent = text;
+}
+
+async function toggleLcdOnlyMode() {
+  const nextMode = !state.lcdOnlyMode;
+  setLcdOnlyMode(nextMode);
+
+  if (nextMode && document.documentElement.requestFullscreen) {
+    await document.documentElement.requestFullscreen().catch(() => {});
+  } else if (!nextMode && document.fullscreenElement && document.exitFullscreen) {
+    await document.exitFullscreen().catch(() => {});
+  }
+}
+
+function setLcdOnlyMode(enabled) {
+  state.lcdOnlyMode = Boolean(enabled);
+  document.documentElement.classList.toggle("lcd-only-mode", state.lcdOnlyMode);
+  elements.deviceStage?.classList.toggle("lcd-only-stage", state.lcdOnlyMode);
+  updateLcdFullscreenButtons();
+  fitDeviceToViewport();
+}
+
+function updateLcdFullscreenButtons() {
+  const label = state.lcdOnlyMode ? "Shell View" : "LCD Full";
+  elements.lcdFullscreenButtons.forEach((button) => {
+    button.textContent = label;
+    button.setAttribute("aria-pressed", String(state.lcdOnlyMode));
+  });
+}
+
+async function installMobileApp() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice.catch(() => null);
+    deferredInstallPrompt = null;
+    setInstallStatus("Install ready.");
+    return;
+  }
+
+  setInstallStatus("Install from browser menu, or use Android APK.");
+}
+
+function setInstallStatus(text) {
+  if (isDeviceUnlocked()) {
+    elements.settingsStatus.textContent = text;
+  } else {
+    setLockStatus(text);
+  }
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  if (location.protocol !== "https:" && location.hostname !== "localhost") return;
+  navigator.serviceWorker.register("service-worker.js").catch(() => {});
 }
 
 function option(value, label) {

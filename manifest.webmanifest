@@ -1,0 +1,19 @@
+{
+  "name": "PokéDex Trainer OS",
+  "short_name": "PokéDex",
+  "description": "A PokéDex-style quiz shell for Who's That Pokémon?",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#c7d49b",
+  "theme_color": "#d82637",
+  "icons": [
+    {
+      "src": "icons/pokedex-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
