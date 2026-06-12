@@ -12,3 +12,8 @@ test("PokeDex shell does not render emulated hardware controls or stylus UI", ()
   assert.equal(indexHtml.includes("stylus-dock"), false);
   assert.equal(indexHtml.includes('class="stylus"'), false);
 });
+
+test("PokeOS command menu does not ship a blocking splash prompt", () => {
+  assert.equal(indexHtml.includes("Command Menu"), false);
+  assert.equal(indexHtml.includes("Choose a program"), false);
+});

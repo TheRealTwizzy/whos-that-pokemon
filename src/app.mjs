@@ -1342,7 +1342,6 @@ function setActiveView(viewName, { focusMenu = false } = {}) {
   elements.workspace.dataset.osState = viewName === "menu" ? "menu" : "app";
   if (viewName === "menu") {
     elements.workspace.dataset.launchTarget = "";
-    updateOsSplash("Command Menu", "Choose a program.");
   }
   elements.viewPanels.forEach((panel) => {
     panel.classList.toggle("hidden", viewName === "menu" || panel.dataset.view !== viewName);

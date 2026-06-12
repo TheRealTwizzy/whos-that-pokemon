@@ -990,6 +990,10 @@ p {
   display: none;
 }
 
+.workspace[data-os-state="menu"] .os-splash {
+  display: none;
+}
+
 .workspace[data-os-state="launching"] .os-splash {
   animation: os-launch-flash 360ms steps(4, end) both;
 }
